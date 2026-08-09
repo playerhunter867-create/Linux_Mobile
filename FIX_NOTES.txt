@@ -1,12 +1,21 @@
-LinOx Mobile replacement patch
+LinOx build-fix package
+========================
 
-Based on the current main branch of playerhunter867-create/Linux_Mobile.
+Root cause found in the current GitHub main branch:
+1) LinuxRuntime.kt was an incomplete object-style implementation while the rest of
+   the app constructs LinuxRuntime(this) and calls instance methods.
+2) TerminalActivity imports kotlinx.coroutines but app/build.gradle.kts did not
+   declare that dependency, and the activity itself was still a stub.
+3) The current native PTY bridge uses forkpty() / <pty.h>, which is not a good
+   Android NDK portability target.
+4) EditorActivity was exported=true.
+5) The Actions workflow did not explicitly install the Android SDK/NDK/CMake
+   components required by the native build.
 
-Primary fixes:
-- Replace forkpty() JNI PTY bridge with posix_openpt()+fork()+setsid()+TIOCSCTTY.
-- Make PTY shutdown safe against the read-thread use-after-free race.
-- Validate PRoot as a real ARM64 ELF and actually start it with --version before accepting it.
-- Install PRoot atomically so a bad picker selection does not destroy a working binary.
-- Preserve rootfs symlinks/hardlinks during tar.gz extraction and reject unsafe archive/symlink paths.
-- Reset active rootfs state correctly after installing a standalone rootfs.
-- Make EditorActivity internal-only (exported=false).
+This package replaces the affected files. It is a replacement patch, not a
+prebuilt APK. The supplied screenshot only shows the final Gradle stack-trace
+tail, not the first compiler error, so the exact failing line cannot be proven
+from the screenshot alone.
+
+Recommended CI command:
+    ./gradlew :app:assembleDebug --stacktrace --no-daemon
