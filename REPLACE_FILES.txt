@@ -1,0 +1,31 @@
+LinOx Mobile 1.0.0 — replacement pack
+
+Replace these files in the repository:
+
+app/build.gradle.kts
+app/src/main/AndroidManifest.xml
+app/src/main/java/org/linox/mobile/LinuxRuntime.kt
+app/src/main/java/org/linox/mobile/DistroManager.kt
+app/src/main/java/org/linox/mobile/DistroActivity.kt
+app/src/main/java/org/linox/mobile/PackageManagerActivity.kt
+gradle.properties
+.github/workflows/android.yml
+
+What this fixes/adds:
+- version 1.0.0
+- restores hasProot()
+- validates ARM64 PRoot before activation
+- selectable/replacable PRoot
+- Ubuntu 24.04 + Debian 12 + Alpine 3.23 + Fedora 44 +
+  openSUSE Leap 15 + Rocky Linux 10 + Arch Linux ARM + Kali Rolling
+- ARM64 OCI manifest selection
+- layer SHA-256 verification
+- Docker/OCI whiteout handling
+- bash/sh fallback so Alpine can boot
+- Android DNS -> Linux resolv.conf bridge
+- interactive PRoot terminal
+- package manager detection for apt/apk/dnf/zypper/pacman
+- no ndk.dir in local.properties
+- workflow creates Gradle wrapper if missing
+- workflow installs NDK 27.0.12077973
+- debug APK artifact upload
