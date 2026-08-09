@@ -1,0 +1,8 @@
+<resources>
+    <color name="linox_bg">#08040D</color>
+    <color name="linox_panel">#12091B</color>
+    <color name="linox_card">#170D24</color>
+    <color name="linox_text">#F1EAF7</color>
+    <color name="linox_muted">#A694B2</color>
+    <color name="linox_accent">#B95CFF</color>
+</resources>
