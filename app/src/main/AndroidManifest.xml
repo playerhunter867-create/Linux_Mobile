@@ -9,12 +9,11 @@
         android:label="LinOx"
         android:allowBackup="true"
         android:supportsRtl="true">
-
         <activity
             android:name=".MainActivity"
             android:screenOrientation="unspecified"
             android:exported="false" />
-        <activity android:name=".EditorActivity" android:exported="true" />
+        <activity android:name=".EditorActivity" android:exported="false" />
         <activity android:name=".DistroActivity" android:exported="false" />
         <activity
             android:name=".TerminalActivity"
