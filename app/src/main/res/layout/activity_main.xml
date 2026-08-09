@@ -51,6 +51,7 @@
             <Button android:id="@+id/btnTerminal" android:text="⌨ Terminal"/>
             <Button android:id="@+id/btnFiles" android:text="📁 Files"/>
             <Button android:id="@+id/btnCode" android:text="💻 Code"/>
+            <Button android:id="@+id/btnLinux" android:text="🐧 Linux"/>
             <Button android:id="@+id/btnPackages" android:text="📦 Packages"/>
             <Button android:id="@+id/btnGit" android:text="🌿 Git"/>
             <Button android:id="@+id/btnAI" android:text="🤖 AI"/>
