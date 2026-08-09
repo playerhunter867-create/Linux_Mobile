@@ -1,0 +1,6 @@
+#!/usr/bin/env sh
+
+DIR="$(cd "$(dirname "$0")" && pwd)"
+
+gradle wrapper --gradle-version 8.7
+exec "$DIR/gradlew" "$@"
