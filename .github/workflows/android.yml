@@ -1,10 +1,9 @@
 name: Build LinOx Mobile APK
 
 on:
-  push:
-    branches: [main]
-  pull_request:
   workflow_dispatch:
+  push:
+    branches: ["main"]
 
 permissions:
   contents: read
@@ -12,7 +11,7 @@ permissions:
 jobs:
   build:
     name: Build debug APK
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-latest
 
     steps:
       - name: Checkout
@@ -24,38 +23,51 @@ jobs:
           distribution: temurin
           java-version: "17"
 
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Generate Gradle Wrapper
+        run: gradle wrapper --gradle-version 8.9
+
+      - name: Make Gradle executable
+        run: chmod +x ./gradlew
+
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
 
-      - name: Install Android SDK, NDK and CMake
+      - name: Install Android SDK and NDK
         run: |
-          sdkmanager "platform-tools"             "platforms;android-35"             "build-tools;35.0.0"             "ndk;27.0.12077973"             "cmake;3.22.1"
+          sdkmanager --install \
+            "platform-tools" \
+            "platforms;android-35" \
+            "build-tools;35.0.0" \
+            "ndk;27.0.12077973"
           yes | sdkmanager --licenses >/dev/null || true
-
-      - name: Set up Gradle 8.9
-        uses: gradle/actions/setup-gradle@v4
-        with:
-          gradle-version: "8.9"
 
       - name: Configure Android SDK
         run: |
           echo "sdk.dir=$ANDROID_SDK_ROOT" > local.properties
-          echo "ndk.dir=$ANDROID_SDK_ROOT/ndk/27.0.12077973" >> local.properties
 
       - name: Clean
-        run: gradle clean --no-daemon
+        run: ./gradlew clean --no-daemon
 
       - name: Build debug APK
-        run: gradle :app:assembleDebug --stacktrace --no-daemon
+        run: ./gradlew :app:assembleDebug --stacktrace --no-daemon
 
-      - name: Check APK
+      - name: Find APK
+        id: apk
+        shell: bash
         run: |
-          test -f app/build/outputs/apk/debug/app-debug.apk
-          ls -lh app/build/outputs/apk/debug/app-debug.apk
+          APK=$(find app/build/outputs/apk/debug -type f -name "*.apk" | head -n 1)
+          if [ -z "$APK" ]; then
+            echo "APK was not produced."
+            exit 1
+          fi
+          echo "apk=$APK" >> "$GITHUB_OUTPUT"
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: LinOx-Mobile-debug
-          path: app/build/outputs/apk/debug/app-debug.apk
+          path: ${{ steps.apk.outputs.apk }}
           if-no-files-found: error
