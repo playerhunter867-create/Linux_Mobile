@@ -26,7 +26,7 @@ jobs:
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
 
-      - name: Install Android SDK and NDK
+      - name: Install Android SDK / NDK
         run: |
           sdkmanager --install \
             "platform-tools" \
@@ -35,19 +35,22 @@ jobs:
             "ndk;27.0.12077973"
           yes | sdkmanager --licenses >/dev/null || true
 
+      - name: Generate Gradle wrapper
+        run: |
+          gradle wrapper --gradle-version 8.9
+          chmod +x ./gradlew
+
       - name: Configure Android SDK
         run: |
           echo "sdk.dir=$ANDROID_SDK_ROOT" > local.properties
+          echo "ndk.dir=$ANDROID_SDK_ROOT/ndk/27.0.12077973" >> local.properties
 
-      - name: Ensure Gradle wrapper is executable
+      - name: Verify critical sources
         run: |
-          if [ ! -f ./gradlew ]; then
-            echo "gradlew is missing; installing a temporary Gradle launcher"
-            curl -fsSL https://services.gradle.org/distributions/gradle-8.9-bin.zip -o /tmp/gradle.zip
-            unzip -q /tmp/gradle.zip -d /tmp/gradle
-            /tmp/gradle/gradle-8.9/bin/gradle wrapper --gradle-version 8.9
-          fi
-          chmod +x ./gradlew
+          test -f app/src/main/java/org/linox/mobile/LinuxRuntime.kt
+          test -f app/src/main/java/org/linox/mobile/DistroActivity.kt
+          test -f app/src/main/java/org/linox/mobile/DistroManager.kt
+          grep -q 'fun hasProot()' app/src/main/java/org/linox/mobile/LinuxRuntime.kt
 
       - name: Clean
         run: ./gradlew clean --no-daemon
@@ -59,16 +62,13 @@ jobs:
         id: apk
         shell: bash
         run: |
-          APK=$(find app/build/outputs/apk/debug -type f -name "*.apk" | head -n 1)
-          if [ -z "$APK" ]; then
-            echo "APK was not produced."
-            exit 1
-          fi
+          APK="$(find app/build/outputs/apk/debug -type f -name '*.apk' | head -n 1)"
+          test -n "$APK"
           echo "apk=$APK" >> "$GITHUB_OUTPUT"
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: LinOx-Mobile-debug
+          name: LinOx-Mobile-1.0.0-debug
           path: ${{ steps.apk.outputs.apk }}
           if-no-files-found: error
