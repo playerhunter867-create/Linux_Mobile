@@ -1,0 +1,74 @@
+name: Build LinOx Mobile APK
+
+on:
+  workflow_dispatch:
+  push:
+    branches: ["main"]
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build debug APK
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android SDK / NDK
+        run: |
+          sdkmanager --install \
+            "platform-tools" \
+            "platforms;android-35" \
+            "build-tools;35.0.0" \
+            "ndk;27.0.12077973"
+          yes | sdkmanager --licenses >/dev/null || true
+
+      - name: Generate Gradle wrapper
+        run: |
+          gradle wrapper --gradle-version 8.9
+          chmod +x ./gradlew
+
+      - name: Configure Android SDK
+        run: |
+          echo "sdk.dir=$ANDROID_SDK_ROOT" > local.properties
+          echo "ndk.dir=$ANDROID_SDK_ROOT/ndk/27.0.12077973" >> local.properties
+
+      - name: Verify critical sources
+        run: |
+          test -f app/src/main/java/org/linox/mobile/LinuxRuntime.kt
+          test -f app/src/main/java/org/linox/mobile/DistroActivity.kt
+          test -f app/src/main/java/org/linox/mobile/DistroManager.kt
+          grep -q 'fun hasProot()' app/src/main/java/org/linox/mobile/LinuxRuntime.kt
+
+      - name: Clean
+        run: ./gradlew clean --no-daemon
+
+      - name: Build debug APK
+        run: ./gradlew :app:assembleDebug --stacktrace --no-daemon
+
+      - name: Find APK
+        id: apk
+        shell: bash
+        run: |
+          APK="$(find app/build/outputs/apk/debug -type f -name '*.apk' | head -n 1)"
+          test -n "$APK"
+          echo "apk=$APK" >> "$GITHUB_OUTPUT"
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: LinOx-Mobile-1.0.0-debug
+          path: ${{ steps.apk.outputs.apk }}
+          if-no-files-found: error
