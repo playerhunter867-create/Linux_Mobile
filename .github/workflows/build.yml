@@ -1,215 +1,59 @@
-name: LinOx 1.0.0 - Build APK
+name: LinOx 1.0.0 APK
 
 on:
   workflow_dispatch:
-  push:
-    branches:
-      - main
-      - master
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   build:
-    name: Build LinOx Debug APK
     runs-on: ubuntu-latest
 
     steps:
-
-      # --------------------------------------------------
-      # 1. DOWNLOAD REPOSITORY
-      # --------------------------------------------------
-      - name: Checkout repository
+      - name: Download repository
         uses: actions/checkout@v4
 
-      # --------------------------------------------------
-      # 2. SHOW REAL REPOSITORY STRUCTURE
-      # --------------------------------------------------
-      - name: Show repository
-        shell: bash
-        run: |
-          echo "======================================"
-          echo "LIN OX BUILD"
-          echo "======================================"
-
-          echo "Current directory:"
-          pwd
-
-          echo ""
-          echo "Root:"
-          ls -la
-
-          echo ""
-          echo "Project files:"
-          find . -maxdepth 5 -type f | sort
-
-      # --------------------------------------------------
-      # 3. JAVA 17
-      # --------------------------------------------------
-      - name: Set up Java 17
+      - name: Java 17
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
-          cache: gradle
 
-      # --------------------------------------------------
-      # 4. ANDROID SDK
-      # --------------------------------------------------
-      - name: Set up Android SDK
+      - name: Android SDK
         uses: android-actions/setup-android@v3
 
-      # --------------------------------------------------
-      # 5. INSTALL REQUIRED SDK
-      # --------------------------------------------------
-      - name: Install Android SDK packages
-        shell: bash
+      - name: Install Android tools
         run: |
           yes | sdkmanager --licenses || true
+          sdkmanager "platform-tools"
+          sdkmanager "platforms;android-35"
+          sdkmanager "build-tools;35.0.0"
+          sdkmanager "ndk;27.0.12077973"
+          sdkmanager "cmake;3.22.1"
 
-          sdkmanager \
-            "platform-tools" \
-            "platforms;android-35" \
-            "build-tools;35.0.0" \
-            "ndk;27.0.12077973" \
-            "cmake;3.22.1"
-
-      # --------------------------------------------------
-      # 6. FIND GRADLE PROJECT
-      # --------------------------------------------------
-      - name: Locate Gradle project
-        shell: bash
+      - name: Show files
         run: |
-          echo "Searching for Gradle project..."
-
-          SETTINGS=$(find . -name "settings.gradle.kts" -o -name "settings.gradle" | head -n 1)
-
-          if [ -z "$SETTINGS" ]; then
-            echo ""
-            echo "ERROR: settings.gradle.kts was not found."
-            echo ""
-            echo "Files visible to GitHub:"
-            find . -maxdepth 6 -type f | sort
-            exit 1
-          fi
-
-          PROJECT_DIR=$(dirname "$SETTINGS")
-
-          echo "Gradle project found:"
-          echo "$PROJECT_DIR"
-
-          echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
-
-      # --------------------------------------------------
-      # 7. CHECK REQUIRED FILES
-      # --------------------------------------------------
-      - name: Check Gradle project
-        shell: bash
-        run: |
-          cd "$PROJECT_DIR"
-
-          echo "Project directory:"
+          echo "=== REPOSITORY ==="
           pwd
+          find . -maxdepth 4 -type f | sort
 
-          echo ""
-          echo "Project files:"
-          ls -la
-
-          if [ ! -f "settings.gradle.kts" ] && [ ! -f "settings.gradle" ]; then
-            echo "ERROR: settings.gradle(.kts) missing"
-            exit 1
-          fi
-
-          if [ ! -f "build.gradle.kts" ] && [ ! -f "build.gradle" ]; then
-            echo "ERROR: build.gradle(.kts) missing"
-            exit 1
-          fi
-
-          if [ ! -d "app" ]; then
-            echo "ERROR: app directory missing"
-            exit 1
-          fi
-
-          if [ ! -f "app/build.gradle.kts" ] && [ ! -f "app/build.gradle" ]; then
-            echo "ERROR: app/build.gradle(.kts) missing"
-            exit 1
-          fi
-
-          echo ""
-          echo "Gradle project structure OK."
-
-      # --------------------------------------------------
-      # 8. GRADLE WRAPPER
-      # --------------------------------------------------
-      - name: Check Gradle wrapper
-        shell: bash
+      - name: Generate Gradle Wrapper
         run: |
-          cd "$PROJECT_DIR"
-
-          if [ ! -f "gradlew" ]; then
-            echo "ERROR: gradlew is missing."
-            echo ""
-            echo "The repository must contain gradlew."
-            exit 1
-          fi
-
+          gradle wrapper --gradle-version 8.9
           chmod +x gradlew
 
-          echo "Gradle wrapper found."
-
-      # --------------------------------------------------
-      # 9. SHOW GRADLE VERSION
-      # --------------------------------------------------
-      - name: Gradle version
-        shell: bash
+      - name: Build APK
         run: |
-          cd "$PROJECT_DIR"
-          ./gradlew --version
+          ./gradlew :app:assembleDebug --stacktrace --no-daemon
 
-      # --------------------------------------------------
-      # 10. CLEAN
-      # --------------------------------------------------
-      - name: Clean project
-        shell: bash
-        run: |
-          cd "$PROJECT_DIR"
-          ./gradlew clean --no-daemon
-
-      # --------------------------------------------------
-      # 11. BUILD DEBUG APK
-      # --------------------------------------------------
-      - name: Build Debug APK
-        shell: bash
-        run: |
-          cd "$PROJECT_DIR"
-
-          ./gradlew \
-            :app:assembleDebug \
-            --stacktrace \
-            --no-daemon \
-            --warning-mode all
-
-      # --------------------------------------------------
-      # 12. FIND APK
-      # --------------------------------------------------
       - name: Find APK
-        shell: bash
         run: |
-          cd "$PROJECT_DIR"
+          find app/build/outputs -name "*.apk" -type f
 
-          echo "Searching for APK..."
-
-          find app/build/outputs -type f -name "*.apk" -print
-
-      # --------------------------------------------------
-      # 13. UPLOAD APK
-      # --------------------------------------------------
-      - name: Upload LinOx APK
+      - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: LinOx-Mobile-1.0.0-debug
-          path: |
-            ${{ env.PROJECT_DIR }}/app/build/outputs/apk/debug/*.apk
+          name: LinOx-1.0.0-debug
+          path: app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
-          retention-days: 30
