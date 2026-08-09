@@ -1,0 +1,12 @@
+LinOx Mobile replacement patch
+
+Based on the current main branch of playerhunter867-create/Linux_Mobile.
+
+Primary fixes:
+- Replace forkpty() JNI PTY bridge with posix_openpt()+fork()+setsid()+TIOCSCTTY.
+- Make PTY shutdown safe against the read-thread use-after-free race.
+- Validate PRoot as a real ARM64 ELF and actually start it with --version before accepting it.
+- Install PRoot atomically so a bad picker selection does not destroy a working binary.
+- Preserve rootfs symlinks/hardlinks during tar.gz extraction and reject unsafe archive/symlink paths.
+- Reset active rootfs state correctly after installing a standalone rootfs.
+- Make EditorActivity internal-only (exported=false).
