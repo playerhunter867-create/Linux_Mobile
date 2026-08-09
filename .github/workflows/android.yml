@@ -1,40 +1,22 @@
-name: Build LinOx Mobile
+name: Android CI
 
 on:
   push:
-    branches: [ main ]
   pull_request:
-  workflow_dispatch:
 
 jobs:
   build:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-latest
+
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-java@v4
+      - name: Set up JDK
+        uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: '17'
-
-      - uses: android-actions/setup-android@v3
-
-      - name: Install Android SDK components
-        # compileSdk 35 / AGP 8.6.1, plus NDK+CMake for the native PTY bridge
-        # (ndkVersion in app/build.gradle.kts must match the version below)
-        run: sdkmanager "platforms;android-35" "build-tools;35.0.0" "ndk;27.0.12077973" "cmake;3.22.1"
-
-      - uses: gradle/actions/setup-gradle@v4
-        with:
-          # No Gradle Wrapper is committed to this repo, so a Gradle version is
-          # installed directly instead. Keep this in sync with AGP compatibility
-          # (AGP 8.6.x needs Gradle 8.7-8.10).
-          gradle-version: '8.9'
+          java-version: 17
+          cache: gradle
 
       - name: Build debug APK
-        run: gradle assembleDebug --no-daemon
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: LinOx-Mobile-debug
-          path: app/build/outputs/apk/debug/app-debug.apk
+        run: chmod +x gradlew && ./gradlew assembleDebug --stacktrace
