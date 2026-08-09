@@ -1,34 +1,38 @@
-# LinOx Mobile v0.9.0
+# LinOx shell startup patch
 
-LinOx is an Android application that hosts a rootless Linux userspace for development. The project is designed around a persistent PTY terminal, PRoot-based execution, and a mobile-first IDE.
+This archive contains **reconstructed patch files** for the startup chain:
 
-## v0.9 highlights
+Linux Setup → rootfs installation → active_rootfs → isLinuxReady() → PTY → PRoot → Linux shell
 
-- App now opens straight into the terminal (no dashboard in the way); a "☰ Menu" button reaches Packages/Git/Files/Settings/Distros
-- First-run setup banner in the terminal if no distro is installed yet, linking straight to the installer
-- apt package manager UI with toolchain presets (Python, C/C++, Node.js, Git tools)
-- Workspace sync between an Android folder (Storage Access Framework) and `/root/workspace`
-- Syntax highlighting in the built-in editor (Python, C-like, Shell, JS)
-- Git UI: status, add, commit, push, pull, log, diff, branch, clone
+## What this fixes
 
-## v0.8 highlights
+- `isLinuxReady()` now checks:
+  - `/bin/bash`
+  - `/usr/bin/bash`
+  - `/bin/sh`
+  - `/usr/bin/sh`
+- `installRootfsTarGz()` and `activateRootfs()` use the **same SharedPreferences key** (`active_rootfs`).
+- Broken or stale `active_rootfs` entries are automatically removed.
+- The shell used for validation is the **same shell used for startup**.
+- PTY/PRoot startup is blocked until the rootfs is fully validated.
+- The Linux state becomes READY immediately after installation without restarting the app.
+- Corrupted rootfs installations produce a **clear setup error** instead of the misleading
+  "Shell is not running. Open Linux Setup first."
 
-- Real PTY terminal foundation
-- ANSI/VT renderer
-- PRoot Linux runtime
-- OCI/Docker Hub distribution installer
-- ARM64 image selection
-- Per-layer SHA-256 verification
-- Ubuntu 24.04 LTS and Debian 12 catalog
-- Persistent active distribution
-- Built-in editor workflow
+## Most likely root cause in the current APK
 
-## Architecture
+The decompiled APK contains both:
 
-`Android app -> PTY -> PRoot -> ARM64 Linux rootfs -> Bash/tools`
+- `isLinuxReady`
+- `/rootfs/bin/sh`
+- `/bin/bash`
+- `active_rootfs`
 
-The Android kernel remains the host kernel. LinOx does not claim to virtualize or replace it.
+This strongly suggests that the readiness check is tied to `/bin/sh`, while the runtime may
+start `/bin/bash` or another shell path. If a Debian/Ubuntu rootfs has a valid shell but the
+specific checked path is missing or symlinked differently, the app enters a false NOT READY state.
 
-See `docs/DISTROS.md` for the distribution manager details.
+Apply the functions from these files into your real source tree:
 
-See `docs/BUILD.md` for how to build an APK (GitHub Actions or locally).
+- `app/src/main/java/org/linox/mobile/LinuxRuntime.kt`
+- `app/src/main/java/org/linox/mobile/TerminalActivity.kt`
