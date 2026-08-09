@@ -1,27 +1,27 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <uses-permission android:name="android.permission.INTERNET"/>
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"/>
     <uses-permission android:name="android.permission.RECORD_AUDIO"/>
     <uses-permission android:name="android.permission.CAMERA"/>
-    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"/>
 
     <application
         android:theme="@style/Theme.LinOx"
-        android:label="LinOx"
+        android:label="LinOx 1.0.0"
         android:allowBackup="true"
         android:supportsRtl="true">
 
         <activity
             android:name=".MainActivity"
             android:screenOrientation="unspecified"
-            android:exported="false" />
+            android:exported="false"/>
 
         <activity
             android:name=".EditorActivity"
-            android:exported="false" />
+            android:exported="false"/>
 
         <activity
             android:name=".DistroActivity"
-            android:exported="false" />
+            android:exported="false"/>
 
         <activity
             android:name=".TerminalActivity"
@@ -32,8 +32,8 @@
             </intent-filter>
         </activity>
 
-        <activity android:name=".PackageManagerActivity" android:exported="false" />
-        <activity android:name=".GitActivity" android:exported="false" />
-        <activity android:name=".WorkspaceActivity" android:exported="false" />
+        <activity android:name=".PackageManagerActivity" android:exported="false"/>
+        <activity android:name=".GitActivity" android:exported="false"/>
+        <activity android:name=".WorkspaceActivity" android:exported="false"/>
     </application>
 </manifest>
