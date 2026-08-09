@@ -1,0 +1,5 @@
+cmake_minimum_required(VERSION 3.22.1)
+project(linoxpty)
+add_library(linoxpty SHARED pty_bridge.cpp)
+find_library(log-lib log)
+target_link_libraries(linoxpty ${log-lib})
