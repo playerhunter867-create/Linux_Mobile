@@ -23,15 +23,6 @@ jobs:
           distribution: temurin
           java-version: "17"
 
-      - name: Set up Gradle
-        uses: gradle/actions/setup-gradle@v4
-
-      - name: Generate Gradle Wrapper
-        run: gradle wrapper --gradle-version 8.9
-
-      - name: Make Gradle executable
-        run: chmod +x ./gradlew
-
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
 
@@ -47,6 +38,16 @@ jobs:
       - name: Configure Android SDK
         run: |
           echo "sdk.dir=$ANDROID_SDK_ROOT" > local.properties
+
+      - name: Ensure Gradle wrapper is executable
+        run: |
+          if [ ! -f ./gradlew ]; then
+            echo "gradlew is missing; installing a temporary Gradle launcher"
+            curl -fsSL https://services.gradle.org/distributions/gradle-8.9-bin.zip -o /tmp/gradle.zip
+            unzip -q /tmp/gradle.zip -d /tmp/gradle
+            /tmp/gradle/gradle-8.9/bin/gradle wrapper --gradle-version 8.9
+          fi
+          chmod +x ./gradlew
 
       - name: Clean
         run: ./gradlew clean --no-daemon
