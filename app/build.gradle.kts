@@ -4,24 +4,24 @@ plugins {
 }
 
 android {
-    ndkVersion = "27.0.12077973"
-
-    externalNativeBuild {
-        cmake { path = file("src/main/cpp/CMakeLists.txt") }
-    }
     namespace = "org.linox.mobile"
     compileSdk = 35
+    ndkVersion = "27.0.12077973"
 
     defaultConfig {
         applicationId = "org.linox.mobile"
         minSdk = 29
         targetSdk = 35
-        versionCode = 9
-        versionName = "0.9.0"
+        versionCode = 10
+        versionName = "0.9.1"
     }
 
-    // Keep Java and Kotlin on the same JVM target.
-    // This fixes: Inconsistent JVM-target compatibility (Java 1.8 vs Kotlin 17).
+    externalNativeBuild {
+        cmake {
+            path = file("src/main/cpp/CMakeLists.txt")
+        }
+    }
+
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
