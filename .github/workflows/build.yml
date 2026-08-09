@@ -63,6 +63,14 @@ jobs:
           ls -la gradlew
           ls -la gradle/wrapper/
 
+      - name: Validate bundled PRoot
+        run: |
+          test -f app/src/main/assets/proot-aarch64-static
+          SIZE=$(stat -c%s app/src/main/assets/proot-aarch64-static)
+          echo "Bundled PRoot size: $SIZE bytes"
+          test "$SIZE" -gt 4096
+          file app/src/main/assets/proot-aarch64-static || true
+
       - name: Check Gradle
         run: |
           ./gradlew --version
@@ -77,6 +85,13 @@ jobs:
             --stacktrace \
             --no-daemon \
             --warning-mode all
+
+      - name: Inspect APK contents
+        run: |
+          APK=$(find app/build/outputs -type f -name "*.apk" | head -n 1)
+          test -n "$APK"
+          ls -lh "$APK"
+          unzip -l "$APK" | grep -E 'assets/proot-aarch64-static|classes.dex|lib/' | head -n 80 || true
 
       - name: Show APK
         run: |
