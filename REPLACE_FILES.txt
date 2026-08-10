@@ -1,0 +1,22 @@
+LinOx Mobile v1.0.0 — Kotlin build fix
+
+Replace these files in the repository:
+
+app/src/main/java/org/linox/mobile/DistroActivity.kt
+app/src/main/java/org/linox/mobile/DistroManager.kt
+app/src/main/java/org/linox/mobile/LinuxRuntime.kt
+app/src/main/java/org/linox/mobile/PackageManagerActivity.kt
+.github/workflows/android.yml
+gradle.properties
+
+IMPORTANT:
+1. Do not replace the rest of app/src/main/java; keep MainActivity, TerminalActivity,
+   EditorActivity, GitActivity, WorkspaceActivity, PtySession, etc.
+2. Do not create local.properties in the repository. GitHub Actions creates it.
+3. The DistroActivity now uses ActivityResultContracts.OpenDocument, so the deprecated
+   onActivityResult API is no longer involved.
+4. DistroActivity and DistroManager use the SAME five-field Distro data class,
+   including packageManager. This fixes the mismatch that caused Kotlin compilation
+   errors in the previous full pack.
+5. The workflow uses Android SDK/NDK 27.0.12077973 and removes ndk.dir from local.properties.
+6. Run GitHub Actions -> Build LinOx Mobile APK -> Build debug APK.
