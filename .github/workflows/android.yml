@@ -26,24 +26,48 @@ jobs:
 
       - name: Install Android SDK components
         run: |
+          yes | sdkmanager --licenses || true
           sdkmanager "platform-tools"
           sdkmanager "platforms;android-35"
           sdkmanager "build-tools;35.0.0"
           sdkmanager "ndk;27.0.12077973"
           sdkmanager "cmake;3.22.1"
 
-      - name: Make Gradle executable
-        run: chmod +x ./gradlew
+      - name: Fix Gradle wrapper
+        run: |
+          echo "Checking gradlew..."
+
+          ls -la gradlew
+
+          # Исправляем Windows CRLF -> Linux LF
+          sed -i 's/\r$//' gradlew
+
+          # Исправляем shebang
+          sed -i '1s|^.*$|#!/bin/sh|' gradlew
+
+          # Делаем файл исполняемым
+          chmod +x gradlew
+
+          echo "gradlew after fix:"
+          file gradlew
+          head -n 1 gradlew
+          ls -la gradlew
+
+      - name: Check Gradle wrapper
+        run: |
+          ./gradlew --version
 
       - name: Clean project
-        run: ./gradlew clean
+        run: |
+          ./gradlew clean --stacktrace
 
       - name: Build Debug APK
-        run: ./gradlew assembleDebug --stacktrace
-
-      - name: Show generated APK
         run: |
-          echo "Generated APK files:"
+          ./gradlew assembleDebug --stacktrace
+
+      - name: Find APK
+        run: |
+          echo "APK files:"
           find app/build/outputs/apk -type f -name "*.apk" -print
 
       - name: Upload APK
