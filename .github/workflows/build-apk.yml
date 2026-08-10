@@ -12,10 +12,8 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout
+      - name: Checkout repository
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
 
       - name: Set up Java 17
         uses: actions/setup-java@v4
@@ -23,53 +21,58 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Show current Gradle wrapper
-        run: |
-          echo "Current wrapper configuration:"
-          cat gradle/wrapper/gradle-wrapper.properties
+      - name: Install Gradle 8.11.1
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.11.1'
 
-      - name: Force Gradle 8.11.1
+      - name: Check project
         shell: bash
         run: |
           set -e
 
-          mkdir -p gradle/wrapper
+          echo "Java:"
+          java -version
 
-          cat > gradle/wrapper/gradle-wrapper.properties <<'EOF'
-          distributionBase=GRADLE_USER_HOME
-          distributionPath=wrapper/dists
-          distributionUrl=https\://services.gradle.org/distributions/gradle-8.11.1-all.zip
-          networkTimeout=10000
-          validateDistributionUrl=true
-          zipStoreBase=GRADLE_USER_HOME
-          zipStorePath=wrapper/dists
-          EOF
+          echo ""
+          echo "Gradle:"
+          gradle --version
 
-          echo "Updated wrapper:"
-          cat gradle/wrapper/gradle-wrapper.properties
+          echo ""
+          echo "Checking Android project..."
 
-      - name: Make gradlew executable
-        run: chmod +x gradlew
+          test -f settings.gradle.kts
+          test -f build.gradle.kts
+          test -f app/build.gradle.kts
 
-      - name: Check Gradle version
-        run: ./gradlew --version
+          echo "Project OK."
 
       - name: Build Debug APK
-        run: ./gradlew --no-daemon --stacktrace assembleDebug
+        shell: bash
+        run: |
+          set -e
+
+          echo "Building with system Gradle 8.11.1..."
+          gradle --no-daemon --stacktrace assembleDebug
 
       - name: Find APK
         shell: bash
         run: |
           set -e
 
-          APK=$(find app/build/outputs/apk -type f -name "*.apk" | head -n 1 || true)
+          echo "Searching for APK..."
+
+          find app/build/outputs -type f -name "*.apk" -print
+
+          APK=$(find app/build/outputs -type f -name "*.apk" | head -n 1 || true)
 
           if [ -z "$APK" ]; then
-            echo "ERROR: Debug APK was not created."
-            find app/build/outputs -type f 2>/dev/null || true
+            echo ""
+            echo "ERROR: APK was not created."
             exit 1
           fi
 
+          echo ""
           echo "APK found:"
           echo "$APK"
 
