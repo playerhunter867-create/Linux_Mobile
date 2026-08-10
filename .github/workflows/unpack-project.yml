@@ -1,0 +1,185 @@
+name: Unpack LinOx ZIP into repository
+
+on:
+  workflow_dispatch:
+    inputs:
+      zip_file:
+        description: "Название ZIP-файла в репозитории"
+        required: true
+        default: "Linux_Mobile-main-0.9.1-fixed.zip"
+        type: string
+
+      delete_zip:
+        description: "Удалить ZIP после распаковки"
+        required: true
+        default: true
+        type: boolean
+
+permissions:
+  contents: write
+
+jobs:
+  unpack:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check ZIP
+        env:
+          ZIP_FILE: ${{ inputs.zip_file }}
+        run: |
+          set -e
+
+          if [ ! -f "$ZIP_FILE" ]; then
+            echo "::error::ZIP файл не найден: $ZIP_FILE"
+            echo ""
+            echo "Загрузи ZIP в корень репозитория."
+            exit 1
+          fi
+
+          echo "ZIP найден: $ZIP_FILE"
+
+      - name: Extract ZIP
+        env:
+          ZIP_FILE: ${{ inputs.zip_file }}
+        run: |
+          set -e
+
+          rm -rf .unpack_tmp
+          mkdir -p .unpack_tmp
+
+          python3 - "$ZIP_FILE" <<'PY'
+          import sys
+          import zipfile
+          from pathlib import PurePosixPath
+
+          archive = sys.argv[1]
+
+          with zipfile.ZipFile(archive) as z:
+              for info in z.infolist():
+                  path = PurePosixPath(info.filename)
+
+                  # Защита от опасных путей
+                  if path.is_absolute() or ".." in path.parts:
+                      raise SystemExit(
+                          f"Unsafe ZIP path detected: {info.filename}"
+                      )
+
+              z.extractall(".unpack_tmp")
+
+          print("ZIP успешно распакован.")
+          PY
+
+      - name: Find project directory
+        run: |
+          set -e
+
+          echo "Содержимое архива:"
+          find .unpack_tmp -maxdepth 2 -print
+
+          DIRS=$(find .unpack_tmp \
+            -mindepth 1 \
+            -maxdepth 1 \
+            -type d | wc -l)
+
+          if [ "$DIRS" -ne 1 ]; then
+            echo "::error::Не удалось определить папку проекта."
+            exit 1
+          fi
+
+          SRC=$(find .unpack_tmp \
+            -mindepth 1 \
+            -maxdepth 1 \
+            -type d \
+            -print -quit)
+
+          echo "Проект найден: $SRC"
+
+          echo "SRC=$SRC" >> "$GITHUB_ENV"
+
+      - name: Copy project to repository root
+        run: |
+          set -e
+
+          echo "Копируем файлы проекта..."
+
+          rsync -av \
+            --exclude='.git/' \
+            --exclude='.github/workflows/unpack-project.yml' \
+            "$SRC/" "./"
+
+          rm -rf .unpack_tmp
+
+          echo ""
+          echo "Проект установлен в корень репозитория."
+
+      - name: Remove ZIP
+        if: ${{ inputs.delete_zip }}
+        env:
+          ZIP_FILE: ${{ inputs.zip_file }}
+        run: |
+          rm -f "$ZIP_FILE"
+          echo "ZIP удалён."
+
+      - name: Check project
+        run: |
+          set -e
+
+          echo "Проверяем проект..."
+
+          if [ ! -f "settings.gradle.kts" ] &&
+             [ ! -f "settings.gradle" ]; then
+            echo "::error::settings.gradle(.kts) не найден!"
+            exit 1
+          fi
+
+          if [ ! -d "app" ]; then
+            echo "::error::Папка app не найдена!"
+            exit 1
+          fi
+
+          echo ""
+          echo "✓ settings.gradle найден"
+          echo "✓ app найден"
+
+          if [ -f "gradlew" ]; then
+            chmod +x gradlew
+            echo "✓ gradlew найден"
+          else
+            echo "::warning::gradlew не найден"
+          fi
+
+      - name: Show project structure
+        run: |
+          echo ""
+          echo "========== PROJECT =========="
+          find . -maxdepth 2 -type f \
+            ! -path './.git/*' \
+            ! -path './.gradle/*' \
+            | sort | head -200
+          echo "=============================="
+
+      - name: Commit changes
+        run: |
+          set -e
+
+          git config user.name "github-actions[bot]"
+          git config user.email \
+            "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git add -A
+
+          if git diff --cached --quiet; then
+            echo "Изменений нет."
+            exit 0
+          fi
+
+          git commit -m "Unpack LinOx project ZIP"
+          git push
+
+          echo ""
+          echo "✓ Проект распакован и отправлен в GitHub."
