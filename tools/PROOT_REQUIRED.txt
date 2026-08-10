@@ -1,0 +1,7 @@
+PRoot is required for LinOx's rootless Linux shell.
+
+The original project stores it at:
+  app files/linox-runtime/proot
+
+Use the app's "SELECT PRoot BINARY" button to install an ARM64 Android-compatible PRoot binary.
+Do not use an arbitrary x86/x86_64 or glibc Linux proot executable.
