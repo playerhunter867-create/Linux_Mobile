@@ -1,0 +1,6 @@
+<resources>
+    <color name="linox_bg">#090B0E</color>
+    <color name="linox_panel">#11151B</color>
+    <color name="linox_accent">#72F0AE</color>
+    <color name="linox_muted">#8F98A6</color>
+</resources>

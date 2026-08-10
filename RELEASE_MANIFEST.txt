@@ -1,0 +1,6 @@
+LinOx Mobile 0.9.0
+Release tree generated: 2026-08-10T11:59:16.843317+00:00
+Target: ARM64 Android (arm64-v8a)
+PRoot SHA-256: fa10b1a7818c2f5b1dcb5834450570c368c9ecf66d31521509621b95c4538a45
+Large Linux rootfs images are downloaded on demand from OCI registries.
+Offline release check: python3 tools/verify_release.py
