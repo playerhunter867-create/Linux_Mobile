@@ -19,25 +19,45 @@ jobs:
           ZIP_FILE=$(find . -maxdepth 2 -type f -name "*.zip" | head -n 1)
 
           if [ -z "$ZIP_FILE" ]; then
-            echo "ZIP file not found!"
+            echo "ERROR: ZIP file not found!"
             exit 1
           fi
 
-          echo "Found: $ZIP_FILE"
+          echo "Found ZIP: $ZIP_FILE"
 
       - name: Unpack ZIP
         run: |
           ZIP_FILE=$(find . -maxdepth 2 -type f -name "*.zip" | head -n 1)
 
+          echo "Unpacking: $ZIP_FILE"
+
+          rm -rf extracted
           mkdir -p extracted
+
           unzip -o "$ZIP_FILE" -d extracted
 
+          echo "Removing .github from extracted files..."
+
+          # Не даём ZIP заменить GitHub Actions
+          rm -rf extracted/.github
+
+          echo "Copying project files..."
+
           cp -r extracted/. .
+
           rm -rf extracted
 
       - name: Remove ZIP
         run: |
           find . -maxdepth 2 -type f -name "*.zip" -delete
+
+      - name: Show files
+        run: |
+          echo "Repository after extraction:"
+          find . -maxdepth 3 -type f \
+            ! -path "./.git/*" \
+            ! -path "./.gradle/*" \
+            | sort
 
       - name: Commit changes
         run: |
