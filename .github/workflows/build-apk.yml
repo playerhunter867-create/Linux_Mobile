@@ -3,30 +3,25 @@ name: Build Linux Mobile APK
 on:
   workflow_dispatch:
 
-  push:
-    branches:
-      - main
-
 permissions:
   contents: read
 
 jobs:
   build:
-    name: Build Debug APK
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup JDK 17
+      - name: Setup Java
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: "17"
           cache: gradle
 
-      - name: Setup Android SDK
+      - name: Setup Android
         uses: android-actions/setup-android@v3
 
       - name: Install Android SDK
@@ -39,115 +34,117 @@ jobs:
             "build-tools;35.0.0" \
             "cmake;3.22.1"
 
-      - name: Show environment
-        run: |
-          echo "===== JAVA ====="
-          java -version
-
-          echo "===== GRADLE ====="
-          ./gradlew --version
-
-          echo "===== ANDROID ====="
-          echo "$ANDROID_HOME"
-
-          echo "===== SDK ====="
-          sdkmanager --list | grep -E \
-            "platforms;android|build-tools;|cmake;|ndk;" \
-            | head -50
-
-      - name: Verify project
-        run: |
-          set -eux
-
-          test -f settings.gradle.kts
-          test -f build.gradle.kts
-          test -f app/build.gradle.kts
-          test -f gradlew
-
-          test -f app/src/main/AndroidManifest.xml
-          test -f app/src/main/cpp/CMakeLists.txt
-          test -f app/src/main/cpp/pty_bridge.cpp
-
-          chmod +x gradlew
-
-      - name: Inspect Gradle configuration
-        run: |
-          echo "===== settings.gradle.kts ====="
-          cat settings.gradle.kts
-
-          echo "===== root build.gradle.kts ====="
-          cat build.gradle.kts
-
-          echo "===== app/build.gradle.kts ====="
-          cat app/build.gradle.kts
-
-          echo "===== CMakeLists.txt ====="
-          cat app/src/main/cpp/CMakeLists.txt
-
-      - name: Clean
-        run: |
-          ./gradlew clean --stacktrace
+      - name: Make Gradle executable
+        run: chmod +x gradlew
 
       - name: Build Debug APK
+        id: build
+        continue-on-error: true
         run: |
           set -o pipefail
 
-          ./gradlew \
-            :app:assembleDebug \
+          ./gradlew :app:assembleDebug \
             --stacktrace \
             --info \
             --console=plain \
-            2>&1 | tee gradle-build.log
+            2>&1 | tee build.log
 
-      - name: Show important Gradle errors
-        if: failure()
+          EXIT_CODE=${PIPESTATUS[0]}
+
+          echo "GRADLE_EXIT_CODE=$EXIT_CODE" >> "$GITHUB_ENV"
+
+          exit $EXIT_CODE
+
+      - name: Extract real error
+        if: always()
         run: |
           echo ""
-          echo "========================================"
-          echo " IMPORTANT BUILD ERRORS"
-          echo "========================================"
+          echo "=================================================="
+          echo "              REAL GRADLE ERROR"
+          echo "=================================================="
+
+          if [ ! -f build.log ]; then
+            echo "build.log does not exist."
+            exit 0
+          fi
+
+          echo ""
+          echo "----- WHAT WENT WRONG -----"
+
+          awk '
+            /What went wrong:/ {
+              found=1
+              count=0
+            }
+
+            found {
+              print
+              count++
+            }
+
+            found && count >= 80 {
+              exit
+            }
+          ' build.log || true
+
+          echo ""
+          echo "----- CAUSED BY -----"
+
+          grep -n -A 15 -B 3 \
+            "Caused by:" \
+            build.log \
+            | tail -100 || true
+
+          echo ""
+          echo "----- COMPILER ERRORS -----"
 
           grep -n -E \
-            "What went wrong|FAILED|Caused by:|error:|ERROR:|Exception|Could not|A problem occurred" \
-            gradle-build.log \
+            "error:|ERROR:|FAILURE:|Exception:|Could not|failed|FAILED" \
+            build.log \
             | tail -150 || true
 
-      - name: Upload Gradle log
+          echo ""
+          echo "----- LAST 100 LINES -----"
+
+          tail -100 build.log
+
+      - name: Upload build log
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: gradle-build-log
-          path: gradle-build.log
-          if-no-files-found: ignore
+          name: Linux-Mobile-Gradle-Log
+          path: build.log
           retention-days: 14
 
-      - name: Find APK
-        if: success()
+      - name: Stop if build failed
+        if: env.GRADLE_EXIT_CODE != '0'
         run: |
-          find app/build/outputs -type f -name "*.apk" -print
+          echo "::error::Gradle build failed."
+          echo "Open the 'REAL GRADLE ERROR' section above."
+          exit 1
 
-      - name: Prepare APK
-        if: success()
+      - name: Locate APK
         run: |
-          mkdir -p release
+          set -e
 
-          APK="$(find app/build/outputs/apk \
+          APK="$(find app/build/outputs \
             -type f \
-            -name "*.apk" \
+            -name '*.apk' \
             | head -n 1)"
 
           if [ -z "$APK" ]; then
-            echo "::error::No APK was generated."
+            echo "::error::APK was not generated."
             exit 1
           fi
+
+          echo "APK: $APK"
+
+          mkdir -p release
 
           cp "$APK" \
             release/Linux-Mobile-0.9-ULTRA-debug.apk
 
-          ls -lh release/
-
       - name: Upload APK
-        if: success()
         uses: actions/upload-artifact@v4
         with:
           name: Linux-Mobile-0.9-ULTRA-debug
