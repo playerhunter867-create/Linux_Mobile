@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       zip_file:
-        description: "Название ZIP-файла в репозитории"
+        description: "Название ZIP-файла в корне репозитория"
         required: true
         default: "Linux_Mobile-main-0.9.1-fixed.zip"
         type: string
@@ -20,37 +20,58 @@ permissions:
 
 jobs:
   unpack:
+    name: Unpack LinOx project
     runs-on: ubuntu-latest
 
     steps:
+
+      # --------------------------------------------------
+      # 1. Получаем репозиторий
+      # --------------------------------------------------
+
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          persist-credentials: true
+
+
+      # --------------------------------------------------
+      # 2. Проверяем ZIP
+      # --------------------------------------------------
 
       - name: Check ZIP
         env:
           ZIP_FILE: ${{ inputs.zip_file }}
         run: |
-          set -e
+          set -euo pipefail
+
+          echo "Проверяем ZIP..."
 
           if [ ! -f "$ZIP_FILE" ]; then
-            echo "::error::ZIP файл не найден: $ZIP_FILE"
+            echo "::error::ZIP-файл не найден: $ZIP_FILE"
             echo ""
-            echo "Загрузи ZIP в корень репозитория."
+            echo "Файлы в корне репозитория:"
+            ls -lah
             exit 1
           fi
 
-          echo "ZIP найден: $ZIP_FILE"
+          echo "✓ ZIP найден:"
+          ls -lh "$ZIP_FILE"
 
-      - name: Extract ZIP
+
+      # --------------------------------------------------
+      # 3. Безопасная распаковка
+      # --------------------------------------------------
+
+      - name: Extract ZIP safely
         env:
           ZIP_FILE: ${{ inputs.zip_file }}
         run: |
-          set -e
+          set -euo pipefail
 
-          rm -rf .unpack_tmp
-          mkdir -p .unpack_tmp
+          rm -rf .linox_unpack
+          mkdir -p .linox_unpack
 
           python3 - "$ZIP_FILE" <<'PY'
           import sys
@@ -59,113 +80,251 @@ jobs:
 
           archive = sys.argv[1]
 
-          with zipfile.ZipFile(archive) as z:
+          print(f"Opening ZIP: {archive}")
+
+          with zipfile.ZipFile(archive, "r") as z:
+
               for info in z.infolist():
                   path = PurePosixPath(info.filename)
 
-                  # Защита от опасных путей
+                  # Защита от:
+                  # /etc/passwd
+                  # ../../something
                   if path.is_absolute() or ".." in path.parts:
                       raise SystemExit(
                           f"Unsafe ZIP path detected: {info.filename}"
                       )
 
-              z.extractall(".unpack_tmp")
+              z.extractall(".linox_unpack")
 
-          print("ZIP успешно распакован.")
+          print("✓ ZIP успешно распакован")
           PY
 
-      - name: Find project directory
+
+      # --------------------------------------------------
+      # 4. Находим корневую папку проекта
+      # --------------------------------------------------
+
+      - name: Detect project directory
         run: |
-          set -e
+          set -euo pipefail
 
           echo "Содержимое архива:"
-          find .unpack_tmp -maxdepth 2 -print
+          find .linox_unpack -maxdepth 2 -print | sort
 
-          DIRS=$(find .unpack_tmp \
+          ROOT_DIRS=$(find .linox_unpack \
             -mindepth 1 \
             -maxdepth 1 \
             -type d | wc -l)
 
-          if [ "$DIRS" -ne 1 ]; then
-            echo "::error::Не удалось определить папку проекта."
-            exit 1
-          fi
-
-          SRC=$(find .unpack_tmp \
+          ROOT_FILES=$(find .linox_unpack \
             -mindepth 1 \
             -maxdepth 1 \
-            -type d \
-            -print -quit)
+            -type f | wc -l)
 
-          echo "Проект найден: $SRC"
+          if [ "$ROOT_DIRS" -eq 1 ]; then
+
+            SRC=$(find .linox_unpack \
+              -mindepth 1 \
+              -maxdepth 1 \
+              -type d \
+              -print -quit)
+
+            echo "Проект находится в: $SRC"
+
+          elif [ "$ROOT_FILES" -gt 0 ]; then
+
+            SRC=".linox_unpack"
+
+            echo "ZIP уже содержит проект в корне."
+
+          else
+
+            echo "::error::Не удалось найти проект внутри ZIP."
+            exit 1
+
+          fi
 
           echo "SRC=$SRC" >> "$GITHUB_ENV"
 
-      - name: Copy project to repository root
-        run: |
-          set -e
 
-          echo "Копируем файлы проекта..."
+      # --------------------------------------------------
+      # 5. Копируем проект
+      #
+      # ВАЖНО:
+      # .github/workflows полностью исключён.
+      #
+      # Это предотвращает ошибку:
+      #
+      # refusing to allow a GitHub App to create or update
+      # workflow without workflows permission
+      # --------------------------------------------------
+
+      - name: Copy project files
+        run: |
+          set -euo pipefail
+
+          echo "Копируем LinOx..."
 
           rsync -av \
             --exclude='.git/' \
-            --exclude='.github/workflows/unpack-project.yml' \
+            --exclude='.github/workflows/' \
             "$SRC/" "./"
 
-          rm -rf .unpack_tmp
+          echo ""
+          echo "✓ Файлы проекта скопированы."
+
+
+      # --------------------------------------------------
+      # 6. Проверяем Android-проект
+      # --------------------------------------------------
+
+      - name: Validate Android project
+        run: |
+          set -euo pipefail
+
+          echo "Проверяем Android-проект..."
+
+          FAILED=0
+
+          if [ -f "settings.gradle.kts" ] || [ -f "settings.gradle" ]; then
+            echo "✓ settings.gradle найден"
+          else
+            echo "::error::settings.gradle(.kts) отсутствует"
+            FAILED=1
+          fi
+
+          if [ -f "build.gradle.kts" ] || [ -f "build.gradle" ]; then
+            echo "✓ build.gradle найден"
+          else
+            echo "::error::build.gradle(.kts) отсутствует"
+            FAILED=1
+          fi
+
+          if [ -d "app" ]; then
+            echo "✓ app/ найден"
+          else
+            echo "::error::Папка app/ отсутствует"
+            FAILED=1
+          fi
+
+          if [ -f "gradlew" ]; then
+            chmod +x gradlew
+            echo "✓ gradlew найден"
+          else
+            echo "::warning::gradlew отсутствует"
+          fi
+
+          if [ "$FAILED" -ne 0 ]; then
+            exit 1
+          fi
 
           echo ""
-          echo "Проект установлен в корень репозитория."
+          echo "✓ Android-проект выглядит корректно."
+
+
+      # --------------------------------------------------
+      # 7. Проверяем структуру LinOx
+      # --------------------------------------------------
+
+      - name: Validate LinOx files
+        run: |
+          set -euo pipefail
+
+          echo ""
+          echo "Проверяем компоненты LinOx..."
+
+          check_file() {
+            if [ -f "$1" ]; then
+              echo "✓ $1"
+            else
+              echo "⚠ $1 отсутствует"
+            fi
+          }
+
+          check_dir() {
+            if [ -d "$1" ]; then
+              echo "✓ $1/"
+            else
+              echo "⚠ $1/ отсутствует"
+            fi
+          }
+
+          check_dir "app/src"
+          check_dir "app/src/main"
+          check_dir "app/src/main/java"
+          check_dir "app/src/main/res"
+
+          check_file "gradlew"
+          check_file "settings.gradle.kts"
+          check_file "build.gradle.kts"
+
+          check_file "build-termux.sh"
+
+          check_dir "tools"
+          check_dir "docs"
+
+          echo ""
+          echo "✓ Проверка завершена."
+
+
+      # --------------------------------------------------
+      # 8. Удаляем ZIP
+      # --------------------------------------------------
 
       - name: Remove ZIP
         if: ${{ inputs.delete_zip }}
         env:
           ZIP_FILE: ${{ inputs.zip_file }}
         run: |
+          set -euo pipefail
+
           rm -f "$ZIP_FILE"
-          echo "ZIP удалён."
 
-      - name: Check project
+          echo "✓ ZIP удалён."
+
+
+      # --------------------------------------------------
+      # 9. Удаляем временные файлы
+      # --------------------------------------------------
+
+      - name: Cleanup
         run: |
-          set -e
+          rm -rf .linox_unpack
 
-          echo "Проверяем проект..."
+          echo "✓ Временные файлы удалены."
 
-          if [ ! -f "settings.gradle.kts" ] &&
-             [ ! -f "settings.gradle" ]; then
-            echo "::error::settings.gradle(.kts) не найден!"
-            exit 1
-          fi
 
-          if [ ! -d "app" ]; then
-            echo "::error::Папка app не найдена!"
-            exit 1
-          fi
+      # --------------------------------------------------
+      # 10. Показываем итоговую структуру
+      # --------------------------------------------------
 
-          echo ""
-          echo "✓ settings.gradle найден"
-          echo "✓ app найден"
-
-          if [ -f "gradlew" ]; then
-            chmod +x gradlew
-            echo "✓ gradlew найден"
-          else
-            echo "::warning::gradlew не найден"
-          fi
-
-      - name: Show project structure
+      - name: Show final project
         run: |
           echo ""
-          echo "========== PROJECT =========="
-          find . -maxdepth 2 -type f \
+          echo "========================================"
+          echo "        LinOx PROJECT STRUCTURE"
+          echo "========================================"
+
+          find . \
+            -maxdepth 3 \
+            -type f \
             ! -path './.git/*' \
             ! -path './.gradle/*' \
-            | sort | head -200
-          echo "=============================="
+            | sort \
+            | head -300
+
+          echo ""
+          echo "========================================"
+
+
+      # --------------------------------------------------
+      # 11. Commit
+      # --------------------------------------------------
 
       - name: Commit changes
         run: |
-          set -e
+          set -euo pipefail
 
           git config user.name "github-actions[bot]"
           git config user.email \
@@ -174,12 +333,26 @@ jobs:
           git add -A
 
           if git diff --cached --quiet; then
-            echo "Изменений нет."
+            echo "Нет изменений для commit."
             exit 0
           fi
 
           git commit -m "Unpack LinOx project ZIP"
-          git push
+
+          echo "✓ Commit создан."
+
+
+      # --------------------------------------------------
+      # 12. Push
+      # --------------------------------------------------
+
+      - name: Push changes
+        run: |
+          set -euo pipefail
+
+          git push origin HEAD:${GITHUB_REF_NAME}
 
           echo ""
-          echo "✓ Проект распакован и отправлен в GitHub."
+          echo "========================================"
+          echo "       ✓ LinOx успешно распакован"
+          echo "========================================"
