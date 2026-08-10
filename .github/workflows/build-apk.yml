@@ -12,20 +12,12 @@ permissions:
 
 jobs:
   build:
-    name: Build Android APK
+    name: Build Debug APK
     runs-on: ubuntu-latest
 
     steps:
-      # --------------------------------------------------
-      # 1. Checkout
-      # --------------------------------------------------
-
-      - name: Checkout repository
+      - name: Checkout
         uses: actions/checkout@v4
-
-      # --------------------------------------------------
-      # 2. Java 17
-      # --------------------------------------------------
 
       - name: Setup JDK 17
         uses: actions/setup-java@v4
@@ -34,129 +26,131 @@ jobs:
           java-version: "17"
           cache: gradle
 
-      # --------------------------------------------------
-      # 3. Android SDK
-      # --------------------------------------------------
-
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
 
-      - name: Install Android SDK packages
+      - name: Install Android SDK
         run: |
-          sdkmanager --install \
+          yes | sdkmanager --licenses || true
+
+          sdkmanager \
             "platform-tools" \
             "platforms;android-35" \
             "build-tools;35.0.0" \
-            "cmake;3.22.1" \
-            "ndk;27.2.12479018"
+            "cmake;3.22.1"
 
-          yes | sdkmanager --licenses || true
-
-      # --------------------------------------------------
-      # 4. Verify project
-      # --------------------------------------------------
-
-      - name: Check Linux Mobile project
+      - name: Show environment
         run: |
-          set -e
+          echo "===== JAVA ====="
+          java -version
 
-          echo "Checking project..."
+          echo "===== GRADLE ====="
+          ./gradlew --version
+
+          echo "===== ANDROID ====="
+          echo "$ANDROID_HOME"
+
+          echo "===== SDK ====="
+          sdkmanager --list | grep -E \
+            "platforms;android|build-tools;|cmake;|ndk;" \
+            | head -50
+
+      - name: Verify project
+        run: |
+          set -eux
 
           test -f settings.gradle.kts
           test -f build.gradle.kts
           test -f app/build.gradle.kts
+          test -f gradlew
+
           test -f app/src/main/AndroidManifest.xml
-
-          test -f app/src/main/java/org/linox/mobile/MainActivity.kt
-          test -f app/src/main/java/org/linox/mobile/LinuxRuntime.kt
-          test -f app/src/main/java/org/linox/mobile/TerminalActivity.kt
-
           test -f app/src/main/cpp/CMakeLists.txt
           test -f app/src/main/cpp/pty_bridge.cpp
 
-          echo "Linux Mobile project structure OK."
-
-      # --------------------------------------------------
-      # 5. Gradle permissions
-      # --------------------------------------------------
-
-      - name: Make Gradle executable
-        run: |
           chmod +x gradlew
 
-      # --------------------------------------------------
-      # 6. Clean
-      # --------------------------------------------------
-
-      - name: Clean project
+      - name: Inspect Gradle configuration
         run: |
-          ./gradlew clean
+          echo "===== settings.gradle.kts ====="
+          cat settings.gradle.kts
 
-      # --------------------------------------------------
-      # 7. Build Debug APK
-      # --------------------------------------------------
+          echo "===== root build.gradle.kts ====="
+          cat build.gradle.kts
+
+          echo "===== app/build.gradle.kts ====="
+          cat app/build.gradle.kts
+
+          echo "===== CMakeLists.txt ====="
+          cat app/src/main/cpp/CMakeLists.txt
+
+      - name: Clean
+        run: |
+          ./gradlew clean --stacktrace
 
       - name: Build Debug APK
         run: |
-          ./gradlew assembleDebug --stacktrace
+          set -o pipefail
 
-      # --------------------------------------------------
-      # 8. Find APK
-      # --------------------------------------------------
+          ./gradlew \
+            :app:assembleDebug \
+            --stacktrace \
+            --info \
+            --console=plain \
+            2>&1 | tee gradle-build.log
 
-      - name: Locate APK
-        id: apk
+      - name: Show important Gradle errors
+        if: failure()
         run: |
-          set -e
+          echo ""
+          echo "========================================"
+          echo " IMPORTANT BUILD ERRORS"
+          echo "========================================"
 
-          APK="$(find app/build/outputs/apk -type f -name '*.apk' | head -n 1)"
+          grep -n -E \
+            "What went wrong|FAILED|Caused by:|error:|ERROR:|Exception|Could not|A problem occurred" \
+            gradle-build.log \
+            | tail -150 || true
 
-          if [ -z "$APK" ]; then
-            echo "::error::APK was not generated."
-            exit 1
-          fi
-
-          echo "APK generated:"
-          echo "$APK"
-
-          echo "apk_path=$APK" >> "$GITHUB_OUTPUT"
-
-      # --------------------------------------------------
-      # 9. Copy APK with friendly name
-      # --------------------------------------------------
-
-      - name: Prepare APK
-        run: |
-          mkdir -p release
-
-          cp "${{ steps.apk.outputs.apk_path }}" \
-             "release/Linux-Mobile-0.9-ULTRA-debug.apk"
-
-          ls -lh release/
-
-      # --------------------------------------------------
-      # 10. Upload APK
-      # --------------------------------------------------
-
-      - name: Upload APK artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: Linux-Mobile-0.9-ULTRA-APK
-          path: release/Linux-Mobile-0.9-ULTRA-debug.apk
-          if-no-files-found: error
-          retention-days: 30
-
-      # --------------------------------------------------
-      # 11. Upload complete build outputs
-      # --------------------------------------------------
-
-      - name: Upload build reports
+      - name: Upload Gradle log
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: Linux-Mobile-build-outputs
-          path: |
-            app/build/outputs/**
-            app/build/reports/**
+          name: gradle-build-log
+          path: gradle-build.log
           if-no-files-found: ignore
-          retention-days: 7
+          retention-days: 14
+
+      - name: Find APK
+        if: success()
+        run: |
+          find app/build/outputs -type f -name "*.apk" -print
+
+      - name: Prepare APK
+        if: success()
+        run: |
+          mkdir -p release
+
+          APK="$(find app/build/outputs/apk \
+            -type f \
+            -name "*.apk" \
+            | head -n 1)"
+
+          if [ -z "$APK" ]; then
+            echo "::error::No APK was generated."
+            exit 1
+          fi
+
+          cp "$APK" \
+            release/Linux-Mobile-0.9-ULTRA-debug.apk
+
+          ls -lh release/
+
+      - name: Upload APK
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Linux-Mobile-0.9-ULTRA-debug
+          path: release/Linux-Mobile-0.9-ULTRA-debug.apk
+          if-no-files-found: error
+          retention-days: 30
