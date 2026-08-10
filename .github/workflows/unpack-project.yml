@@ -3,6 +3,9 @@ name: Install fixed build pack
 on:
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   install:
     runs-on: ubuntu-latest
@@ -16,8 +19,6 @@ jobs:
         run: |
           set -euo pipefail
 
-          echo "Searching for build pack..."
-
           ZIP_FILE=""
 
           if [ -f "Linux_Mobile-fixed-build-pack.zip" ]; then
@@ -27,23 +28,12 @@ jobs:
           fi
 
           if [ -z "$ZIP_FILE" ]; then
-            echo ""
-            echo "ERROR: ZIP file was not found."
-            echo ""
-            echo "Files currently in repository:"
+            echo "ERROR: ZIP file not found."
             find . -maxdepth 3 -type f | sort
-            echo ""
-            echo "Upload Linux_Mobile-fixed-build-pack.zip to the repository root"
-            echo "and run this workflow again."
             exit 1
           fi
 
-          echo "ZIP found:"
-          echo "$ZIP_FILE"
-
-          echo "ZIP contents:"
-          unzip -l "$ZIP_FILE"
-
+          echo "ZIP found: $ZIP_FILE"
           echo "ZIP_FILE=$ZIP_FILE" >> "$GITHUB_ENV"
 
       - name: Extract build pack
@@ -51,20 +41,38 @@ jobs:
         run: |
           set -euo pipefail
 
-          echo "Extracting: $ZIP_FILE"
+          rm -rf _build_pack
+          mkdir -p _build_pack
 
-          unzip -o "$ZIP_FILE" -d .
+          echo "Extracting ZIP..."
 
-          echo ""
-          echo "Extraction completed."
+          unzip -q "$ZIP_FILE" -d _build_pack
 
-      - name: Show changed files
+          echo "Extracted files:"
+          find _build_pack -maxdepth 3 -type f | sort
+
+          SOURCE_DIR="_build_pack"
+
+          if [ -d "_build_pack/Linux_Mobile-main" ]; then
+            SOURCE_DIR="_build_pack/Linux_Mobile-main"
+          fi
+
+          echo "Using source directory: $SOURCE_DIR"
+
+          cp -a "$SOURCE_DIR"/. .
+
+          rm -rf _build_pack
+
+          echo "Final project structure:"
+          find . -maxdepth 3 -type f \
+            ! -path "./.git/*" \
+            ! -name "*.zip" \
+            | sort
+
+      - name: Remove ZIP from repository
         shell: bash
         run: |
-          echo "Repository files after extraction:"
-          find . -maxdepth 5 -type f \
-            ! -path "./.git/*" \
-            | sort
+          rm -f "$ZIP_FILE"
 
       - name: Commit changes
         shell: bash
@@ -81,5 +89,5 @@ jobs:
             exit 0
           fi
 
-          git commit -m "Apply fixed build pack"
+          git commit -m "Apply fixed LinOx build pack"
           git push
