@@ -1,14 +1,13 @@
-name: Install fixed build pack
+name: Unpack LinOx Project
 
 on:
   workflow_dispatch:
 
 permissions:
   contents: write
-  workflows: write
 
 jobs:
-  install:
+  unpack:
     runs-on: ubuntu-latest
 
     steps:
@@ -20,80 +19,53 @@ jobs:
       - name: Find ZIP
         shell: bash
         run: |
-          set -euo pipefail
-
-          ZIP_FILE=""
+          set -e
 
           if [ -f "Linux_Mobile-fixed-build-pack.zip" ]; then
-            ZIP_FILE="Linux_Mobile-fixed-build-pack.zip"
+            ZIP="Linux_Mobile-fixed-build-pack.zip"
           else
-            ZIP_FILE="$(find . -maxdepth 3 -type f -name "*.zip" | head -n 1 || true)"
+            ZIP=$(find . -maxdepth 3 -type f -name "*.zip" | head -n 1)
           fi
 
-          if [ -z "$ZIP_FILE" ]; then
-            echo "ERROR: ZIP file not found."
-            echo ""
-            echo "Files currently in repository:"
-            find . -maxdepth 3 -type f \
-              ! -path "./.git/*" \
-              | sort
+          if [ -z "$ZIP" ]; then
+            echo "ERROR: ZIP file not found"
             exit 1
           fi
 
-          echo "ZIP found: $ZIP_FILE"
-          echo "ZIP_FILE=$ZIP_FILE" >> "$GITHUB_ENV"
+          echo "Found: $ZIP"
+          echo "ZIP=$ZIP" >> "$GITHUB_ENV"
 
-      - name: Extract build pack
+      - name: Extract ZIP
         shell: bash
         run: |
-          set -euo pipefail
+          set -e
 
-          rm -rf _build_pack
-          mkdir -p _build_pack
+          rm -rf _unpack
+          mkdir _unpack
 
-          echo "Extracting $ZIP_FILE..."
+          unzip -q "$ZIP" -d _unpack
 
-          unzip -q "$ZIP_FILE" -d _build_pack
-
-          echo ""
-          echo "Extracted files:"
-          find _build_pack -maxdepth 4 -type f | sort
-
-          SOURCE_DIR="_build_pack"
-
-          if [ -d "_build_pack/Linux_Mobile-main" ]; then
-            SOURCE_DIR="_build_pack/Linux_Mobile-main"
+          if [ -d "_unpack/Linux_Mobile-main" ]; then
+            cp -a _unpack/Linux_Mobile-main/. .
+          else
+            cp -a _unpack/. .
           fi
 
-          echo ""
-          echo "Using source directory: $SOURCE_DIR"
+          rm -rf _unpack
+          rm -f "$ZIP"
 
-          cp -a "$SOURCE_DIR"/. .
-
-          rm -rf _build_pack
-
-      - name: Remove ZIP
+      - name: Show project
         shell: bash
         run: |
-          set -euo pipefail
-
-          rm -f "$ZIP_FILE"
-
-          echo "ZIP removed."
-
-      - name: Show project structure
-        shell: bash
-        run: |
-          echo ""
-          echo "Final project structure:"
+          echo "Project files:"
           find . -maxdepth 4 -type f \
             ! -path "./.git/*" \
             | sort
 
-      - name: Commit changes
+      - name: Commit and push
         shell: bash
         run: |
-          set -euo pipefail
+          set -e
 
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
@@ -101,10 +73,9 @@ jobs:
           git add .
 
           if git diff --cached --quiet; then
-            echo "No changes to commit."
+            echo "Nothing to commit."
             exit 0
           fi
 
-          git commit -m "Apply fixed LinOx build pack"
-
-          git push origin HEAD:main
+          git commit -m "Install LinOx fixed build pack"
+          git push origin main
