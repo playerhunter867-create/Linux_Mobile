@@ -1,0 +1,107 @@
+name: LinOx 1.0.0 - Debug APK
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build LinOx Debug APK
+    runs-on: ubuntu-latest
+
+    steps:
+
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: gradle
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android SDK
+        run: |
+          yes | sdkmanager --licenses || true
+
+          sdkmanager \
+            "platform-tools" \
+            "platforms;android-35" \
+            "build-tools;35.0.0" \
+            "ndk;27.0.12077973" \
+            "cmake;3.22.1"
+
+      - name: Show project
+        run: |
+          echo "=== PROJECT ==="
+          pwd
+
+          echo "=== FILES ==="
+          find . -maxdepth 5 -type f | sort
+
+      - name: Check Gradle project
+        run: |
+          test -f settings.gradle.kts
+          test -f build.gradle.kts
+          test -f app/build.gradle.kts
+
+          echo "Gradle project files found."
+
+      - name: Generate Gradle Wrapper
+        run: |
+          gradle wrapper --gradle-version 8.9
+
+          chmod +x gradlew
+
+          echo "Gradle Wrapper created."
+          ls -la gradlew
+          ls -la gradle/wrapper/
+
+      - name: Validate bundled PRoot
+        run: |
+          test -f app/src/main/assets/proot-aarch64-static
+          SIZE=$(stat -c%s app/src/main/assets/proot-aarch64-static)
+          echo "Bundled PRoot size: $SIZE bytes"
+          test "$SIZE" -gt 4096
+          file app/src/main/assets/proot-aarch64-static || true
+
+      - name: Check Gradle
+        run: |
+          ./gradlew --version
+
+      - name: Clean
+        run: |
+          ./gradlew clean --no-daemon
+
+      - name: Build Debug APK
+        run: |
+          ./gradlew :app:assembleDebug \
+            --stacktrace \
+            --no-daemon \
+            --warning-mode all
+
+      - name: Inspect APK contents
+        run: |
+          APK=$(find app/build/outputs -type f -name "*.apk" | head -n 1)
+          test -n "$APK"
+          ls -lh "$APK"
+          unzip -l "$APK" | grep -E 'assets/proot-aarch64-static|classes.dex|lib/' | head -n 80 || true
+
+      - name: Show APK
+        run: |
+          echo "=== APK ==="
+          find app/build/outputs -type f -name "*.apk" -print
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: LinOx-1.0.0-debug
+          path: app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
+          retention-days: 30
