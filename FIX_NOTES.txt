@@ -1,0 +1,21 @@
+LinOx build-fix package
+========================
+
+Root cause found in the current GitHub main branch:
+1) LinuxRuntime.kt was an incomplete object-style implementation while the rest of
+   the app constructs LinuxRuntime(this) and calls instance methods.
+2) TerminalActivity imports kotlinx.coroutines but app/build.gradle.kts did not
+   declare that dependency, and the activity itself was still a stub.
+3) The current native PTY bridge uses forkpty() / <pty.h>, which is not a good
+   Android NDK portability target.
+4) EditorActivity was exported=true.
+5) The Actions workflow did not explicitly install the Android SDK/NDK/CMake
+   components required by the native build.
+
+This package replaces the affected files. It is a replacement patch, not a
+prebuilt APK. The supplied screenshot only shows the final Gradle stack-trace
+tail, not the first compiler error, so the exact failing line cannot be proven
+from the screenshot alone.
+
+Recommended CI command:
+    ./gradlew :app:assembleDebug --stacktrace --no-daemon
