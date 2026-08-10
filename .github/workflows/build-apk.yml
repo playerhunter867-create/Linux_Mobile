@@ -1,0 +1,74 @@
+name: Build LinOx Debug APK
+
+on:
+  workflow_dispatch:
+
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build Debug APK
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: gradle
+
+      - name: Make Gradle executable
+        run: chmod +x ./gradlew
+
+      - name: Check Android project
+        run: |
+          set -e
+
+          echo "Checking project..."
+
+          test -f settings.gradle.kts
+          test -f build.gradle.kts
+          test -f app/build.gradle.kts
+          test -f gradlew
+
+          echo "Android project OK."
+
+      - name: Build Debug APK
+        run: ./gradlew --no-daemon --stacktrace assembleDebug
+
+      - name: Find APK
+        run: |
+          set -e
+
+          echo "Searching for APK..."
+
+          find app/build/outputs/apk -type f -name "*.apk" -print
+
+          APK=$(find app/build/outputs/apk -type f -name "*.apk" | head -n 1)
+
+          if [ -z "$APK" ]; then
+            echo "ERROR: APK was not created."
+            exit 1
+          fi
+
+          echo "APK found:"
+          echo "$APK"
+
+          cp "$APK" LinOx-debug.apk
+
+      - name: Upload Debug APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: LinOx-debug-apk
+          path: LinOx-debug.apk
+          if-no-files-found: error
+          retention-days: 14
