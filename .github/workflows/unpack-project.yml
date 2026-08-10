@@ -1,0 +1,373 @@
+name: Unpack LinOx Fixed Build Pack
+
+on:
+  workflow_dispatch:
+    inputs:
+      zip_file:
+        description: "ZIP-файл в корне репозитория"
+        required: true
+        default: "Linux_Mobile-fixed-build-pack.zip"
+        type: string
+
+      delete_zip:
+        description: "Удалить ZIP после успешной распаковки"
+        required: true
+        default: true
+        type: boolean
+
+permissions:
+  contents: write
+
+jobs:
+  unpack:
+    name: Install LinOx project
+    runs-on: ubuntu-latest
+
+    steps:
+
+      # ==========================================
+      # CHECKOUT
+      # ==========================================
+
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: true
+
+
+      # ==========================================
+      # CHECK ZIP
+      # ==========================================
+
+      - name: Check ZIP
+        env:
+          ZIP_FILE: ${{ inputs.zip_file }}
+        run: |
+          set -euo pipefail
+
+          echo "Checking ZIP..."
+
+          if [ ! -f "$ZIP_FILE" ]; then
+            echo "::error::ZIP not found: $ZIP_FILE"
+            echo ""
+            echo "Files in repository:"
+            ls -lah
+            exit 1
+          fi
+
+          echo "✓ ZIP found:"
+          ls -lh "$ZIP_FILE"
+
+
+      # ==========================================
+      # SAFE EXTRACTION
+      # ==========================================
+
+      - name: Extract ZIP safely
+        env:
+          ZIP_FILE: ${{ inputs.zip_file }}
+        run: |
+          set -euo pipefail
+
+          rm -rf .linox_unpack
+          mkdir -p .linox_unpack
+
+          python3 - "$ZIP_FILE" <<'PY'
+          import sys
+          import zipfile
+          from pathlib import PurePosixPath
+
+          archive = sys.argv[1]
+
+          print(f"Opening: {archive}")
+
+          with zipfile.ZipFile(archive, "r") as z:
+
+              for info in z.infolist():
+                  path = PurePosixPath(info.filename)
+
+                  # Protection against:
+                  # /absolute/path
+                  # ../../outside/repository
+                  if path.is_absolute() or ".." in path.parts:
+                      raise SystemExit(
+                          f"Unsafe ZIP path: {info.filename}"
+                      )
+
+              z.extractall(".linox_unpack")
+
+          print("✓ ZIP extracted safely")
+          PY
+
+
+      # ==========================================
+      # FIND PROJECT
+      # ==========================================
+
+      - name: Detect project root
+        run: |
+          set -euo pipefail
+
+          echo "Archive structure:"
+          find .linox_unpack -maxdepth 2 -print | sort
+
+          ROOT_DIRS=$(find .linox_unpack \
+            -mindepth 1 \
+            -maxdepth 1 \
+            -type d | wc -l)
+
+          ROOT_FILES=$(find .linox_unpack \
+            -mindepth 1 \
+            -maxdepth 1 \
+            -type f | wc -l)
+
+          if [ "$ROOT_DIRS" -eq 1 ]; then
+
+            SRC=$(find .linox_unpack \
+              -mindepth 1 \
+              -maxdepth 1 \
+              -type d \
+              -print -quit)
+
+            echo "Project directory: $SRC"
+
+          elif [ "$ROOT_FILES" -gt 0 ]; then
+
+            SRC=".linox_unpack"
+
+            echo "Project is already at archive root."
+
+          else
+
+            echo "::error::Could not find project inside ZIP."
+            exit 1
+
+          fi
+
+          echo "SRC=$SRC" >> "$GITHUB_ENV"
+
+
+      # ==========================================
+      # COPY PROJECT
+      #
+      # IMPORTANT:
+      # NEVER copy .github/workflows
+      # ==========================================
+
+      - name: Copy LinOx project
+        run: |
+          set -euo pipefail
+
+          echo "Installing LinOx..."
+
+          rsync -av \
+            --exclude='.git/' \
+            --exclude='.github/workflows/' \
+            "$SRC/" "./"
+
+          echo ""
+          echo "✓ LinOx files copied."
+
+
+      # ==========================================
+      # MAKE GRADLE EXECUTABLE
+      # ==========================================
+
+      - name: Prepare Gradle
+        run: |
+          set -euo pipefail
+
+          if [ -f "gradlew" ]; then
+            chmod +x gradlew
+            echo "✓ gradlew executable"
+          else
+            echo "::warning::gradlew not found"
+          fi
+
+
+      # ==========================================
+      # VALIDATE ANDROID PROJECT
+      # ==========================================
+
+      - name: Validate Android project
+        run: |
+          set -euo pipefail
+
+          echo ""
+          echo "Checking Android project..."
+
+          FAILED=0
+
+          if [ -f "settings.gradle.kts" ] || \
+             [ -f "settings.gradle" ]; then
+            echo "✓ settings.gradle"
+          else
+            echo "::error::settings.gradle(.kts) missing"
+            FAILED=1
+          fi
+
+          if [ -f "build.gradle.kts" ] || \
+             [ -f "build.gradle" ]; then
+            echo "✓ build.gradle"
+          else
+            echo "::error::build.gradle(.kts) missing"
+            FAILED=1
+          fi
+
+          if [ -d "app" ]; then
+            echo "✓ app/"
+          else
+            echo "::error::app/ missing"
+            FAILED=1
+          fi
+
+          if [ -d "app/src/main" ]; then
+            echo "✓ app/src/main/"
+          else
+            echo "::error::app/src/main missing"
+            FAILED=1
+          fi
+
+          if [ "$FAILED" -ne 0 ]; then
+            exit 1
+          fi
+
+          echo ""
+          echo "✓ Android project looks valid."
+
+
+      # ==========================================
+      # CHECK LIN-OX FILES
+      # ==========================================
+
+      - name: Validate LinOx files
+        run: |
+          set -euo pipefail
+
+          echo ""
+          echo "Checking LinOx components..."
+
+          check_file() {
+            if [ -f "$1" ]; then
+              echo "✓ $1"
+            else
+              echo "⚠ $1 missing"
+            fi
+          }
+
+          check_dir() {
+            if [ -d "$1" ]; then
+              echo "✓ $1/"
+            else
+              echo "⚠ $1/ missing"
+            fi
+          }
+
+          check_file "gradlew"
+          check_file "settings.gradle.kts"
+          check_file "build.gradle.kts"
+
+          check_dir "app"
+          check_dir "app/src"
+          check_dir "app/src/main"
+
+          check_dir "docs"
+          check_dir "tools"
+
+          check_file "build-termux.sh"
+
+          echo ""
+          echo "✓ LinOx validation finished."
+
+
+      # ==========================================
+      # REMOVE ZIP
+      # ==========================================
+
+      - name: Remove ZIP
+        if: ${{ inputs.delete_zip }}
+        env:
+          ZIP_FILE: ${{ inputs.zip_file }}
+        run: |
+          set -euo pipefail
+
+          rm -f "$ZIP_FILE"
+
+          echo "✓ ZIP removed."
+
+
+      # ==========================================
+      # CLEANUP
+      # ==========================================
+
+      - name: Cleanup
+        run: |
+          rm -rf .linox_unpack
+          echo "✓ Temporary files removed."
+
+
+      # ==========================================
+      # SHOW RESULT
+      # ==========================================
+
+      - name: Show final project
+        run: |
+          echo ""
+          echo "=========================================="
+          echo "        LINOX PROJECT INSTALLED"
+          echo "=========================================="
+
+          echo ""
+          echo "Top-level files:"
+
+          find . \
+            -maxdepth 2 \
+            -type f \
+            ! -path './.git/*' \
+            ! -path './.gradle/*' \
+            | sort \
+            | head -250
+
+          echo ""
+          echo "=========================================="
+
+
+      # ==========================================
+      # COMMIT
+      # ==========================================
+
+      - name: Commit changes
+        run: |
+          set -euo pipefail
+
+          git config user.name "github-actions[bot]"
+          git config user.email \
+            "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git add -A
+
+          if git diff --cached --quiet; then
+            echo "No changes to commit."
+            exit 0
+          fi
+
+          git commit -m "Install fixed LinOx build pack"
+
+          echo "✓ Commit created."
+
+
+      # ==========================================
+      # PUSH
+      # ==========================================
+
+      - name: Push changes
+        run: |
+          set -euo pipefail
+
+          git push origin HEAD:${GITHUB_REF_NAME}
+
+          echo ""
+          echo "=========================================="
+          echo "       ✓ LINOX INSTALLED SUCCESSFULLY"
+          echo "=========================================="
