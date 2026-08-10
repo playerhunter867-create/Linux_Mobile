@@ -1,4 +1,4 @@
-name: Unpack LinOx Project
+name: Unpack LinOx ZIP
 
 on:
   workflow_dispatch:
@@ -11,71 +11,75 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout repository
+      - name: Checkout
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
 
       - name: Find ZIP
-        shell: bash
         run: |
           set -e
 
-          if [ -f "Linux_Mobile-fixed-build-pack.zip" ]; then
-            ZIP="Linux_Mobile-fixed-build-pack.zip"
-          else
-            ZIP=$(find . -maxdepth 3 -type f -name "*.zip" | head -n 1)
-          fi
+          ZIP=$(find . -maxdepth 2 -type f -name "*.zip" | head -n 1 || true)
 
           if [ -z "$ZIP" ]; then
-            echo "ERROR: ZIP file not found"
+            echo "ERROR: ZIP file not found."
+            echo "Upload the fixed ZIP to the repository root first."
             exit 1
           fi
 
-          echo "Found: $ZIP"
+          echo "Found ZIP: $ZIP"
           echo "ZIP=$ZIP" >> "$GITHUB_ENV"
 
-      - name: Extract ZIP
-        shell: bash
+      - name: Extract project
         run: |
           set -e
 
-          rm -rf _unpack
-          mkdir _unpack
+          rm -rf /tmp/linox-pack
+          mkdir -p /tmp/linox-pack
 
-          unzip -q "$ZIP" -d _unpack
+          unzip -q "$ZIP" -d /tmp/linox-pack
 
-          if [ -d "_unpack/Linux_Mobile-main" ]; then
-            cp -a _unpack/Linux_Mobile-main/. .
+          if [ -d "/tmp/linox-pack/Linux_Mobile-main" ]; then
+            SOURCE="/tmp/linox-pack/Linux_Mobile-main"
           else
-            cp -a _unpack/. .
+            SOURCE="/tmp/linox-pack"
           fi
 
-          rm -rf _unpack
+          echo "Installing project from: $SOURCE"
+
+          # Copy everything EXCEPT GitHub workflows.
+          rsync -a \
+            --exclude='.github/workflows/' \
+            "$SOURCE/" \
+            "./"
+
           rm -f "$ZIP"
 
-      - name: Show project
-        shell: bash
+      - name: Verify Android project
         run: |
-          echo "Project files:"
-          find . -maxdepth 4 -type f \
-            ! -path "./.git/*" \
-            | sort
+          set -e
 
-      - name: Commit and push
-        shell: bash
+          test -f "settings.gradle.kts"
+          test -f "build.gradle.kts"
+          test -d "app"
+
+          echo "Android project detected successfully."
+          echo ""
+          echo "Project:"
+          ls -la
+
+      - name: Commit changes
         run: |
           set -e
 
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
-          git add .
+          git add -A
 
           if git diff --cached --quiet; then
             echo "Nothing to commit."
             exit 0
           fi
 
-          git commit -m "Install LinOx fixed build pack"
-          git push origin main
+          git commit -m "Install fixed LinOx project"
+          git push origin HEAD:main
