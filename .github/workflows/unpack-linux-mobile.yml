@@ -1,0 +1,75 @@
+name: Unpack Linux Mobile
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  unpack:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Find ZIP
+        run: |
+          ZIP="$(find . -maxdepth 3 -type f \
+            \( -name 'Linux_Mobile_0.9_ULTRA.zip' -o -name 'Linux_Mobile.zip' \) \
+            | head -n 1)"
+
+          if [ -z "$ZIP" ]; then
+            echo "ERROR: Linux Mobile ZIP not found."
+            exit 1
+          fi
+
+          echo "ZIP found: $ZIP"
+          echo "ZIP_PATH=$ZIP" >> "$GITHUB_ENV"
+
+      - name: Unpack ZIP
+        run: |
+          mkdir -p .unpack
+
+          unzip -o "$ZIP_PATH" -d .unpack
+
+          # Если ZIP содержит единственную верхнюю папку,
+          # переносим её содержимое в корень репозитория.
+          ENTRIES=$(find .unpack -mindepth 1 -maxdepth 1 | wc -l)
+
+          if [ "$ENTRIES" -eq 1 ] && [ -d "$(find .unpack -mindepth 1 -maxdepth 1 -type d)" ]; then
+            ROOT_DIR="$(find .unpack -mindepth 1 -maxdepth 1 -type d)"
+            cp -a "$ROOT_DIR"/. .
+          else
+            cp -a .unpack/. .
+          fi
+
+          rm -rf .unpack
+
+      - name: Remove ZIP from repository
+        run: |
+          rm -f Linux_Mobile_0.9_ULTRA.zip
+          rm -f Linux_Mobile.zip
+
+      - name: Show extracted project
+        run: |
+          echo "=== Linux Mobile project ==="
+          find . -maxdepth 3 -type f \
+            ! -path './.git/*' \
+            | sort | head -300
+
+      - name: Commit changes
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git add -A
+
+          if git diff --cached --quiet; then
+            echo "No changes to commit."
+            exit 0
+          fi
+
+          git commit -m "Extract Linux Mobile 0.9 ULTRA"
+          git push
