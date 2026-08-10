@@ -5,6 +5,7 @@ on:
 
 permissions:
   contents: write
+  workflows: write
 
 jobs:
   install:
@@ -13,6 +14,8 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Find ZIP
         shell: bash
@@ -24,12 +27,16 @@ jobs:
           if [ -f "Linux_Mobile-fixed-build-pack.zip" ]; then
             ZIP_FILE="Linux_Mobile-fixed-build-pack.zip"
           else
-            ZIP_FILE=$(find . -maxdepth 3 -type f -name "*.zip" | head -n 1 || true)
+            ZIP_FILE="$(find . -maxdepth 3 -type f -name "*.zip" | head -n 1 || true)"
           fi
 
           if [ -z "$ZIP_FILE" ]; then
             echo "ERROR: ZIP file not found."
-            find . -maxdepth 3 -type f | sort
+            echo ""
+            echo "Files currently in repository:"
+            find . -maxdepth 3 -type f \
+              ! -path "./.git/*" \
+              | sort
             exit 1
           fi
 
@@ -44,12 +51,13 @@ jobs:
           rm -rf _build_pack
           mkdir -p _build_pack
 
-          echo "Extracting ZIP..."
+          echo "Extracting $ZIP_FILE..."
 
           unzip -q "$ZIP_FILE" -d _build_pack
 
+          echo ""
           echo "Extracted files:"
-          find _build_pack -maxdepth 3 -type f | sort
+          find _build_pack -maxdepth 4 -type f | sort
 
           SOURCE_DIR="_build_pack"
 
@@ -57,22 +65,30 @@ jobs:
             SOURCE_DIR="_build_pack/Linux_Mobile-main"
           fi
 
+          echo ""
           echo "Using source directory: $SOURCE_DIR"
 
           cp -a "$SOURCE_DIR"/. .
 
           rm -rf _build_pack
 
-          echo "Final project structure:"
-          find . -maxdepth 3 -type f \
-            ! -path "./.git/*" \
-            ! -name "*.zip" \
-            | sort
-
-      - name: Remove ZIP from repository
+      - name: Remove ZIP
         shell: bash
         run: |
+          set -euo pipefail
+
           rm -f "$ZIP_FILE"
+
+          echo "ZIP removed."
+
+      - name: Show project structure
+        shell: bash
+        run: |
+          echo ""
+          echo "Final project structure:"
+          find . -maxdepth 4 -type f \
+            ! -path "./.git/*" \
+            | sort
 
       - name: Commit changes
         shell: bash
@@ -90,4 +106,5 @@ jobs:
           fi
 
           git commit -m "Apply fixed LinOx build pack"
-          git push
+
+          git push origin HEAD:main
