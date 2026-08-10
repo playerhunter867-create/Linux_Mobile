@@ -3,29 +3,50 @@ name: Build Linux Mobile APK
 on:
   workflow_dispatch:
 
+  push:
+    branches:
+      - main
+
 permissions:
   contents: read
 
 jobs:
   build:
+    name: Linux Mobile 0.9 ULTRA
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout
+
+      # ============================================
+      # CHECKOUT
+      # ============================================
+
+      - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Setup Java
+      # ============================================
+      # JAVA
+      # ============================================
+
+      - name: Setup JDK 17
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: "17"
           cache: gradle
 
-      - name: Setup Android
+      # ============================================
+      # ANDROID SDK
+      # ============================================
+
+      - name: Setup Android SDK
         uses: android-actions/setup-android@v3
 
       - name: Install Android SDK
+        shell: bash
         run: |
+          set -e
+
           yes | sdkmanager --licenses || true
 
           sdkmanager \
@@ -34,102 +55,295 @@ jobs:
             "build-tools;35.0.0" \
             "cmake;3.22.1"
 
-      - name: Make Gradle executable
-        run: chmod +x gradlew
+      # ============================================
+      # PROJECT CHECK
+      # ============================================
 
-      - name: Build Debug APK
-        id: build
+      - name: Verify Linux Mobile project
+        shell: bash
+        run: |
+          set -e
+
+          echo "Checking Linux Mobile project..."
+
+          REQUIRED_FILES=(
+            "settings.gradle.kts"
+            "build.gradle.kts"
+            "app/build.gradle.kts"
+            "app/src/main/AndroidManifest.xml"
+            "app/src/main/java/org/linox/mobile/MainActivity.kt"
+            "app/src/main/java/org/linox/mobile/LinuxRuntime.kt"
+            "app/src/main/java/org/linox/mobile/TerminalActivity.kt"
+            "app/src/main/cpp/CMakeLists.txt"
+            "app/src/main/cpp/pty_bridge.cpp"
+            "gradlew"
+          )
+
+          for FILE in "${REQUIRED_FILES[@]}"; do
+            if [ ! -f "$FILE" ]; then
+              echo "::error::Missing file: $FILE"
+              exit 1
+            fi
+
+            echo "OK: $FILE"
+          done
+
+          chmod +x gradlew
+
+          echo ""
+          echo "Project structure is valid."
+
+      # ============================================
+      # ENVIRONMENT INFO
+      # ============================================
+
+      - name: Show build environment
+        shell: bash
+        run: |
+          echo "=============================="
+          echo "JAVA"
+          echo "=============================="
+          java -version
+
+          echo ""
+          echo "=============================="
+          echo "GRADLE"
+          echo "=============================="
+          ./gradlew --version
+
+          echo ""
+          echo "=============================="
+          echo "ANDROID SDK"
+          echo "=============================="
+          echo "$ANDROID_HOME"
+
+          echo ""
+          echo "=============================="
+          echo "SDK PACKAGES"
+          echo "=============================="
+
+          sdkmanager --list | grep -E \
+            "platforms;android|build-tools;|cmake;|ndk;" \
+            | head -80 || true
+
+      # ============================================
+      # CLEAN
+      # ============================================
+
+      - name: Clean project
+        shell: bash
+        run: |
+          ./gradlew clean \
+            --stacktrace \
+            --console=plain
+
+      # ============================================
+      # KOTLIN COMPILATION
+      # ============================================
+
+      - name: Compile Kotlin
+        id: kotlin
         continue-on-error: true
+        shell: bash
         run: |
           set -o pipefail
+
+          echo "========================================"
+          echo "KOTLIN COMPILATION"
+          echo "========================================"
+
+          ./gradlew :app:compileDebugKotlin \
+            --stacktrace \
+            --info \
+            --console=plain \
+            2>&1 | tee kotlin-build.log
+
+          EXIT_CODE=${PIPESTATUS[0]}
+
+          echo "KOTLIN_EXIT_CODE=$EXIT_CODE" >> "$GITHUB_ENV"
+
+          exit $EXIT_CODE
+
+      # ============================================
+      # KOTLIN ERROR REPORT
+      # ============================================
+
+      - name: Print Kotlin compiler errors
+        if: always()
+        shell: bash
+        run: |
+          echo ""
+          echo "=================================================="
+          echo "        KOTLIN COMPILER DIAGNOSTICS"
+          echo "=================================================="
+
+          if [ ! -f kotlin-build.log ]; then
+            echo "Kotlin log does not exist."
+            exit 0
+          fi
+
+          echo ""
+          echo "--------------- DIRECT ERRORS ----------------"
+
+          grep -n -E \
+            "^e:| error:|Unresolved reference|Type mismatch|Cannot access|Overload resolution|Expecting|Unexpected tokens|Conflicting overloads|Redeclaration" \
+            kotlin-build.log \
+            | tail -250 || true
+
+          echo ""
+          echo "--------------- ERROR CONTEXT ----------------"
+
+          grep -n -B 8 -A 20 \
+            -E "^e:" \
+            kotlin-build.log \
+            | tail -350 || true
+
+          echo ""
+          echo "--------------- WHAT WENT WRONG ---------------"
+
+          grep -n -A 100 \
+            "What went wrong:" \
+            kotlin-build.log \
+            | tail -150 || true
+
+          echo ""
+          echo "--------------- CAUSED BY --------------------"
+
+          grep -n -A 20 -B 5 \
+            "Caused by:" \
+            kotlin-build.log \
+            | tail -200 || true
+
+          echo ""
+          echo "--------------- LAST 150 LINES ---------------"
+
+          tail -150 kotlin-build.log || true
+
+      # ============================================
+      # UPLOAD KOTLIN LOG
+      # ============================================
+
+      - name: Upload Kotlin compilation log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Linux-Mobile-Kotlin-Compilation-Log
+          path: kotlin-build.log
+          if-no-files-found: ignore
+          retention-days: 14
+
+      # ============================================
+      # STOP IF KOTLIN FAILED
+      # ============================================
+
+      - name: Stop after Kotlin failure
+        if: env.KOTLIN_EXIT_CODE != '0'
+        shell: bash
+        run: |
+          echo "::error::Kotlin compilation failed."
+          echo ""
+          echo "The real compiler errors are printed above."
+          echo "Download the Kotlin compilation log from Artifacts."
+          exit 1
+
+      # ============================================
+      # BUILD DEBUG APK
+      # ============================================
+
+      - name: Build Debug APK
+        id: apk
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -o pipefail
+
+          echo "========================================"
+          echo "BUILDING DEBUG APK"
+          echo "========================================"
 
           ./gradlew :app:assembleDebug \
             --stacktrace \
             --info \
             --console=plain \
-            2>&1 | tee build.log
+            2>&1 | tee apk-build.log
 
           EXIT_CODE=${PIPESTATUS[0]}
 
-          echo "GRADLE_EXIT_CODE=$EXIT_CODE" >> "$GITHUB_ENV"
+          echo "APK_EXIT_CODE=$EXIT_CODE" >> "$GITHUB_ENV"
 
           exit $EXIT_CODE
 
-      - name: Extract real error
+      # ============================================
+      # APK ERROR REPORT
+      # ============================================
+
+      - name: Print APK build errors
         if: always()
+        shell: bash
         run: |
           echo ""
           echo "=================================================="
-          echo "              REAL GRADLE ERROR"
+          echo "             APK BUILD DIAGNOSTICS"
           echo "=================================================="
 
-          if [ ! -f build.log ]; then
-            echo "build.log does not exist."
+          if [ ! -f apk-build.log ]; then
+            echo "APK build log does not exist."
             exit 0
           fi
 
-          echo ""
-          echo "----- WHAT WENT WRONG -----"
-
-          awk '
-            /What went wrong:/ {
-              found=1
-              count=0
-            }
-
-            found {
-              print
-              count++
-            }
-
-            found && count >= 80 {
-              exit
-            }
-          ' build.log || true
-
-          echo ""
-          echo "----- CAUSED BY -----"
-
-          grep -n -A 15 -B 3 \
-            "Caused by:" \
-            build.log \
-            | tail -100 || true
-
-          echo ""
-          echo "----- COMPILER ERRORS -----"
-
           grep -n -E \
-            "error:|ERROR:|FAILURE:|Exception:|Could not|failed|FAILED" \
-            build.log \
-            | tail -150 || true
+            "FAILURE:|What went wrong:|Caused by:|error:|ERROR:|Exception|Could not|failed|FAILED" \
+            apk-build.log \
+            | tail -250 || true
 
           echo ""
-          echo "----- LAST 100 LINES -----"
+          echo "--------------- LAST 150 LINES ----------------"
 
-          tail -100 build.log
+          tail -150 apk-build.log || true
 
-      - name: Upload build log
+      # ============================================
+      # UPLOAD APK LOG
+      # ============================================
+
+      - name: Upload APK build log
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: Linux-Mobile-Gradle-Log
-          path: build.log
+          name: Linux-Mobile-APK-Build-Log
+          path: apk-build.log
+          if-no-files-found: ignore
           retention-days: 14
 
-      - name: Stop if build failed
-        if: env.GRADLE_EXIT_CODE != '0'
+      # ============================================
+      # STOP IF APK BUILD FAILED
+      # ============================================
+
+      - name: Stop after APK failure
+        if: env.APK_EXIT_CODE != '0'
+        shell: bash
         run: |
-          echo "::error::Gradle build failed."
-          echo "Open the 'REAL GRADLE ERROR' section above."
+          echo "::error::Debug APK build failed."
           exit 1
 
-      - name: Locate APK
+      # ============================================
+      # FIND APK
+      # ============================================
+
+      - name: Find generated APK
+        shell: bash
         run: |
           set -e
 
-          APK="$(find app/build/outputs \
+          echo "Searching for APK..."
+
+          find app/build/outputs \
             -type f \
-            -name '*.apk' \
+            -name "*.apk" \
+            -print
+
+          APK="$(find app/build/outputs/apk \
+            -type f \
+            -name "*.apk" \
             | head -n 1)"
 
           if [ -z "$APK" ]; then
@@ -137,17 +351,53 @@ jobs:
             exit 1
           fi
 
-          echo "APK: $APK"
+          echo "Generated APK:"
+          echo "$APK"
 
           mkdir -p release
 
           cp "$APK" \
-            release/Linux-Mobile-0.9-ULTRA-debug.apk
+            "release/Linux-Mobile-0.9-ULTRA-debug.apk"
 
-      - name: Upload APK
+      # ============================================
+      # APK INFO
+      # ============================================
+
+      - name: Show APK information
+        shell: bash
+        run: |
+          echo "=============================="
+          echo "LINUX MOBILE APK"
+          echo "=============================="
+
+          ls -lh release/Linux-Mobile-0.9-ULTRA-debug.apk
+
+          file release/Linux-Mobile-0.9-ULTRA-debug.apk
+
+      # ============================================
+      # UPLOAD APK
+      # ============================================
+
+      - name: Upload Debug APK
         uses: actions/upload-artifact@v4
         with:
           name: Linux-Mobile-0.9-ULTRA-debug
           path: release/Linux-Mobile-0.9-ULTRA-debug.apk
           if-no-files-found: error
           retention-days: 30
+
+      # ============================================
+      # FINAL
+      # ============================================
+
+      - name: Build successful
+        shell: bash
+        run: |
+          echo ""
+          echo "=============================================="
+          echo "       LINUX MOBILE 0.9 ULTRA"
+          echo "       DEBUG APK BUILD SUCCESSFUL"
+          echo "=============================================="
+          echo ""
+          echo "APK:"
+          echo "release/Linux-Mobile-0.9-ULTRA-debug.apk"
