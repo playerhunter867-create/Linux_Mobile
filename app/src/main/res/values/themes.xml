@@ -1,9 +1,0 @@
-<resources>
-    <style name="Theme.LinOx" parent="Theme.Material3.DayNight.NoActionBar">
-        <item name="android:fontFamily">sans</item>
-        <item name="android:windowLightStatusBar">false</item>
-        <item name="android:navigationBarColor">#08040D</item>
-        <item name="android:statusBarColor">#08040D</item>
-        <item name="android:colorAccent">#B95CFF</item>
-    </style>
-</resources>
